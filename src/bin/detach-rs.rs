@@ -31,6 +31,10 @@ struct Args {
     //TODO handle canonical relative path
     #[arg(short, long, default_value = "./detach.log")]
     log_file: PathBuf,
+
+    /// Timeout after a specified number of seconds
+    #[arg(long, short, value_name = "SECONDS")]
+    timeout: Option<u64>,
 }
 
 #[tokio::main]
@@ -109,13 +113,29 @@ async fn main() -> anyhow::Result<()> {
 
     // Simulated background task
     let mut count = 0;
-    loop {
-        info!("Service heartbeat #{}", count);
-        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-        count += 1;
-        
-        if count > 100 { break; }
-        info!("count: {}", count);
+    let main_loop_future = async {
+        loop {
+            info!("Service heartbeat #{}", count);
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+            count += 1;
+            
+            if count > 100 { break; }
+            info!("count: {}", count);
+        }
+    };
+
+    if let Some(timeout_seconds) = args.timeout {
+        info!("Setting timeout for {} seconds.", timeout_seconds);
+        tokio::select! {
+            _ = main_loop_future => {
+                info!("Main loop finished before timeout.");
+            }
+            _ = tokio::time::sleep(std::time::Duration::from_secs(timeout_seconds)) => {
+                info!("Timeout reached after {} seconds. Terminating service.", timeout_seconds);
+            }
+        }
+    } else {
+        main_loop_future.await;
     }
 
     info!("Service shutting down.");
