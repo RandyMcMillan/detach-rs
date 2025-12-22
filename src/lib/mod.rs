@@ -65,7 +65,76 @@ use std::fs::File as StdFile;
 #[cfg(unix)]
 use std::os::unix::io::AsRawFd;
 
-/// Performs the double-fork routine to completely detach from the terminal session.
+/// Performs the double-fork routine to completely detach a process from its controlling terminal.
+///
+/// This function is specifically designed for Unix-like operating systems (`cfg(unix)`).
+/// On non-Unix systems, it will print an error message and return immediately without performing
+/// any daemonization.
+///
+/// The daemonization process involves a "double-fork" technique to ensure that the process
+/// fully detaches from the controlling terminal, cannot reacquire one, and is not terminated
+/// when the parent shell exits.
+///
+/// # Stages of Daemonization:
+///
+/// 1.  **First Fork**: The parent process forks, and the original parent immediately exits.
+///     This ensures that the child process is not a process group leader and is adopted by `init` (PID 1).
+///
+/// 2.  **Create New Session (`setsid`)**: The child process creates a new session and becomes the
+///     session leader. This detaches it from its controlling terminal.
+///
+/// 3.  **Second Fork**: The session leader forks again, and the session leader (first child) exits.
+///     This ensures that the new child process is no longer a session leader, preventing it from
+///     reacquiring a controlling terminal.
+///
+/// 4.  **Change Working Directory**: The process changes its current working directory to the root (`/`).
+///     This is done to avoid keeping any mount points busy, which could prevent unmounting.
+///
+/// 5.  **Redirect Standard I/O**: Standard input, output, and error streams (`stdin`, `stdout`, `stderr`)
+///     are redirected to `/dev/null`. This prevents the daemon from attempting to read from or
+///     write to a terminal that no longer exists, and ensures it runs silently in the background.
+///
+/// # Asynchronous Execution and Timeout Management:
+///
+/// After successful daemonization, this function initializes a `tokio` multi-threaded runtime
+/// within the child process. It then executes the provided `service_future` within this runtime.
+///
+/// -   **Logging**: Logging is set up to write to the specified `log_path` with the given `level`.
+/// -   **Timeout**: If a `timeout` duration is provided, the function will use `tokio::select!`
+///     to concurrently await either the completion of the `service_future` or the expiration of
+///     the timeout. The process will terminate when the first of these events occurs.
+/// -   **Process Termination**: The daemon process will explicitly call `std::process::exit(0)`
+///     upon successful completion of the `service_future` or when the timeout is reached.
+///
+/// # Parameters:
+///
+/// -   `log_path`: A `PathBuf` indicating the file where the daemon's logs should be written.
+/// -   `level`: A `log::LevelFilter` specifying the minimum level of log messages to record.
+/// -   `timeout`: An `Option<u64>` representing the maximum duration (in seconds) the daemon
+///     should run. If `Some(seconds)`, the daemon will terminate after `seconds`. If `None`,
+///     it will run until the `service_future` completes.
+/// -   `service_future`: An asynchronous future (`F`) that represents the main logic of the
+///     daemon service. This future must implement `Future<Output = Result<(), anyhow::Error>> + Send + 'static`.
+///     The daemon will execute this future and terminate upon its completion or timeout.
+///
+/// # Returns:
+///
+/// -   `Ok(())`: This function only returns `Ok(())` in the *original parent process* after the
+///     first fork. The child process (daemon) does not return from this function; instead, it
+///     executes the `service_future` and eventually calls `std::process::exit(0)`.
+/// -   `Err(anyhow::Error)`: If any step of the daemonization process (forking, `setsid`, I/O redirection)
+///     fails, an error is returned.
+///
+/// # Panics:
+///
+/// -   This function will panic if the `tokio` runtime cannot be built (e.g., due to system resource
+///     limitations), or if the `service_future` itself panics.
+/// -   If `service_future` returns an `Err`, `expect` will cause a panic.
+///
+/// # Safety:
+///
+/// This function uses `unsafe` blocks for `fork`, `setsid`, and `dup2` calls, which are POSIX
+/// system calls. Care has been taken to ensure their correct usage for daemonization.
 #[cfg(unix)]
 pub fn daemonize<F>(log_path: &PathBuf, level: log::LevelFilter, timeout: Option<u64>, service_future: F) -> Result<(), anyhow::Error>
 where
