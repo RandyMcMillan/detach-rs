@@ -65,7 +65,7 @@ async fn main() -> anyhow::Result<()> {
 
     if should_detach {
         println!("Detaching process... Check logs at {:?}", log_file_path);
-        daemonize(&log_file_path)?;
+        daemonize(&log_file_path, log_level)?;
     } else {
         // If not detaching, setup simple console logging or tailing
         if args.tail {

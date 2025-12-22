@@ -11,7 +11,7 @@ use std::os::unix::io::AsRawFd;
 
 /// Performs the double-fork routine to completely detach from the terminal session.
 #[cfg(unix)]
-pub fn daemonize(log_path: &PathBuf) -> Result<(), anyhow::Error> {
+pub fn daemonize(log_path: &PathBuf, level: log::LevelFilter) -> Result<(), anyhow::Error> {
     unsafe {
         // 1. First fork: Parent exits, child continues
         let pid = fork();
@@ -38,12 +38,12 @@ pub fn daemonize(log_path: &PathBuf) -> Result<(), anyhow::Error> {
     }
 
     // Setup file logging since we no longer have a stdout
-    setup_logging(log_path, log::LevelFilter::Info)?;
+    setup_logging(log_path, level)?;
     Ok(())
 }
 
 #[cfg(not(unix))]
-pub fn daemonize(_log_path: &PathBuf) -> Result<(), anyhow::Error> {
+pub fn daemonize(_log_path: &PathBuf, _level: log::LevelFilter) -> Result<(), anyhow::Error> {
     eprintln!("Daemonization is not supported on this operating system.");
     Ok(()) // Or return an error if you want to explicitly signal failure
 }
@@ -67,7 +67,7 @@ pub fn setup_logging(path: &PathBuf, level: log::LevelFilter) -> Result<(), anyh
 }
 
 #[cfg(not(unix))]
-pub fn setup_logging(_path: &PathBuf) -> Result<(), anyhow::Error> {
+pub fn setup_logging(_path: &PathBuf, _level: log::LevelFilter) -> Result<(), anyhow::Error> {
     eprintln!("File logging with log4rs is not supported on this operating system when daemonizing.");
     // For non-unix, if daemonize is called (which it won't be if cfg(not(unix)))
     // then we would rely on main to setup a console logger if not tailing.
