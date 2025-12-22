@@ -24,5 +24,62 @@ jobs:
         toolchain: stable
     - name: Build
       run: cargo build --verbose
+    - name: Build Release
+      run: cargo build --verbose --release
     - name: Run tests
       run: cargo test --verbose
+
+    - name: Run command-line tests (Non-daemonizing)
+      run: |
+        ./target/release/detach-rs --no-detach --log-file test_no_detach.log
+        grep "Service heartbeat" test_no_detach.log
+      if: runner.os != 'Windows'
+
+    - name: Run command-line tests (Non-daemonizing)
+      run: |
+        .\target\release\detach-rs.exe --no-detach --log-file test_no_detach.log
+        findstr "Service heartbeat" test_no_detach.log
+      if: runner.os == 'Windows'
+
+    - name: Run command-line tests (Tailing)
+      run: |
+        # Run in background because --tail keeps running
+        ./target/release/detach-rs --tail --log-file test_tail.log &
+        # Give it a moment to start and write logs
+        sleep 5
+        # Check if log file contains heartbeat messages
+        grep "Service heartbeat" test_tail.log
+        # Kill the background process
+        pkill -f "detach-rs --tail" || true # '|| true' to prevent failure if process is already gone
+      if: runner.os != 'Windows'
+
+    - name: Run command-line tests (Tailing)
+      run: |
+        # Start in background; 'start' command on Windows
+        start /B .\target\release\detach-rs.exe --tail --log-file test_tail.log
+        # Give it a moment to start and write logs
+        timeout /T 5 /NOBREAK >nul
+        # Check if log file contains heartbeat messages
+        findstr "Service heartbeat" test_tail.log
+        # Kill the background process; taskkill /IM is by image name
+        taskkill /IM detach-rs.exe /F || true # '|| true' to prevent failure if process is already gone
+      if: runner.os == 'Windows'
+
+    - name: Test daemonization (Unix-like)
+      run: |
+        # Run default daemonization
+        ./target/release/detach-rs --log-file test_daemonize.log &
+        # Give it a moment to detach and write some logs
+        sleep 5
+        # Check if the log file was created and contains expected output
+        grep "Service heartbeat" test_daemonize.log
+        # Attempt to find and kill the daemonized process.
+        pkill -f "detach-rs" || true
+      if: runner.os != 'Windows'
+
+    - name: Test default (Windows - daemonization not supported)
+      run: |
+        # Default run on Windows should print "Daemonization is not supported"
+        # We redirect stderr to stdout to capture it
+        .\target\release\detach-rs.exe 2>&1 | findstr "Daemonization is not supported"
+      if: runner.os == 'Windows'
