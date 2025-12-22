@@ -11,7 +11,7 @@ use std::os::unix::io::AsRawFd;
 
 /// Performs the double-fork routine to completely detach from the terminal session.
 #[cfg(unix)]
-pub fn daemonize(log_path: &PathBuf, level: log::LevelFilter) -> Result<(), anyhow::Error> {
+pub fn daemonize(log_path: &PathBuf, level: log::LevelFilter, timeout: Option<u64>) -> Result<(), anyhow::Error> {
     unsafe {
         // 1. First fork: Parent exits, child continues
         let pid = fork();
@@ -43,7 +43,7 @@ pub fn daemonize(log_path: &PathBuf, level: log::LevelFilter) -> Result<(), anyh
 }
 
 #[cfg(not(unix))]
-pub fn daemonize(_log_path: &PathBuf, _level: log::LevelFilter) -> Result<(), anyhow::Error> {
+pub fn daemonize(_log_path: &PathBuf, _level: log::LevelFilter, _timeout: Option<u64>) -> Result<(), anyhow::Error> {
     eprintln!("Daemonization is not supported on this operating system.");
     Ok(()) // Or return an error if you want to explicitly signal failure
 }
