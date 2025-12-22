@@ -57,7 +57,6 @@
 //! Note: On non-Unix systems, daemonization is not supported, and `--detach` will be ignored.
 use anyhow;
 use std::path::PathBuf;
-use log::LevelFilter;
 
 #[cfg(unix)]
 use libc::{dup2, fork, setsid, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO};
