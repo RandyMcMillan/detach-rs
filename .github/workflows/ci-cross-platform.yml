@@ -84,3 +84,15 @@ jobs:
         # We redirect stderr to stdout to capture it
         .\target\release\detach-rs.exe 2>&1 | findstr "Daemonization is not supported"
       if: runner.os == 'Windows'
+
+    - name: Run command-line tests (Timeout - Non-daemonizing)
+      run: |
+        ./target/release/detach-rs --no-detach --log-file test_timeout.log --timeout 5
+        grep "Timeout reached" test_timeout.log
+      if: runner.os != 'Windows'
+
+    - name: Run command-line tests (Timeout - Non-daemonizing)
+      run: |
+        .\target\release\detach-rs.exe --no-detach --log-file test_timeout.log --timeout 5
+        findstr "Timeout reached" test_timeout.log
+      if: runner.os == 'Windows'
