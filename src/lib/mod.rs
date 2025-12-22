@@ -11,7 +11,10 @@ use std::os::unix::io::AsRawFd;
 
 /// Performs the double-fork routine to completely detach from the terminal session.
 #[cfg(unix)]
-pub fn daemonize(log_path: &PathBuf, level: log::LevelFilter, timeout: Option<u64>) -> Result<(), anyhow::Error> {
+pub fn daemonize<F>(log_path: &PathBuf, level: log::LevelFilter, timeout: Option<u64>, service_future: F) -> Result<(), anyhow::Error>
+where
+    F: std::future::Future<Output = Result<(), anyhow::Error>> + Send + 'static,
+{
     unsafe {
         // 1. First fork: Parent exits, child continues
         let pid = fork();
@@ -39,11 +42,47 @@ pub fn daemonize(log_path: &PathBuf, level: log::LevelFilter, timeout: Option<u6
 
     // Setup file logging since we no longer have a stdout
     setup_logging(log_path, level)?;
-    Ok(())
+
+    // IMPORTANT: Re-initialize tokio runtime AFTER daemonization
+    // This prevents issues with forking a multi-threaded runtime.
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap(); // Panics if runtime cannot be built
+
+    rt.block_on(async {
+        use log::info; // Import info here as well
+        use tokio::time::sleep;
+        use std::time::Duration;
+
+        info!("Daemon process started. PID: {}", std::process::id());
+
+        if let Some(timeout_seconds) = timeout {
+            info!("Setting timeout for {} seconds.", timeout_seconds);
+            tokio::select! {
+                _ = service_future => {
+                    info!("Service future finished before timeout.");
+                }
+                _ = sleep(Duration::from_secs(timeout_seconds)) => {
+                    info!("Timeout reached after {} seconds. Terminating service.", timeout_seconds);
+                }
+            }
+        } else {
+            service_future.await.expect("Service future failed"); // Unwraps Result, will panic on error
+        }
+
+        info!("Daemon process shutting down.");
+        std::process::exit(0);
+    });
+    // This part is unreachable as std::process::exit(0) is called above.
+    // However, Rust requires a return type for all branches.
+    unreachable!()
 }
 
 #[cfg(not(unix))]
-pub fn daemonize(_log_path: &PathBuf, _level: log::LevelFilter, _timeout: Option<u64>) -> Result<(), anyhow::Error> {
+pub fn daemonize<F>(_log_path: &PathBuf, _level: log::LevelFilter, _timeout: Option<u64>, _service_future: F) -> Result<(), anyhow::Error>
+where
+    F: std::future::Future<Output = Result<(), anyhow::Error>> + Send + 'static,
     eprintln!("Daemonization is not supported on this operating system.");
     Ok(()) // Or return an error if you want to explicitly signal failure
 }
