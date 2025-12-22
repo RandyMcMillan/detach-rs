@@ -1,14 +1,14 @@
 #![allow(unused)]
 use clap::{Parser, ValueEnum};
 #[cfg(unix)]
-use libc::{dup2, fork, setsid, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO};
-use log::{info, LevelFilter};
+use libc::{STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, dup2, fork, setsid};
+use log::{LevelFilter, info};
 use std::fs::File as StdFile; // Rename to avoid conflict with tokio::fs::File
 #[cfg(unix)]
 use std::os::unix::io::AsRawFd;
 use std::path::PathBuf;
-use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::fs::File;
+use tokio::io::{AsyncBufReadExt, BufReader};
 
 use detach::daemonize;
 use detach::run_service_async;
@@ -41,8 +41,6 @@ struct Args {
     #[arg(long, short, value_name = "LEVEL", value_enum)]
     logging: Option<LevelFilter>,
 }
-
-
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
@@ -78,18 +76,16 @@ fn main() -> anyhow::Result<()> {
     } else {
         // If not detaching, setup simple console logging or tailing
         if args.tail {
-            env_logger::Builder::new()
-                .filter_level(log_level)
-                .init();
+            env_logger::Builder::new().filter_level(log_level).init();
             println!("Tailing log file: {:?}", log_file_path);
 
             // Spawn tailing task
             let tail_log_file_path = log_file_path.clone();
             tokio::spawn(async move {
-                use tokio::io::{AsyncBufReadExt, BufReader};
-                use tokio::fs::File;
-                use tokio::time::sleep;
                 use std::time::Duration;
+                use tokio::fs::File;
+                use tokio::io::{AsyncBufReadExt, BufReader};
+                use tokio::time::sleep;
 
                 loop {
                     match File::open(&tail_log_file_path).await {
@@ -109,7 +105,7 @@ fn main() -> anyhow::Result<()> {
                                     offset += bytes_read as u64;
                                 }
                             }
-                        },
+                        }
                         Err(e) => {
                             eprintln!("Error opening log file for tailing: {:?}. Retrying...", e);
                             sleep(Duration::from_secs(1)).await;
@@ -119,9 +115,7 @@ fn main() -> anyhow::Result<()> {
             });
         } else {
             // If not detaching and not tailing, just setup simple console logging
-            env_logger::Builder::new()
-                .filter_level(log_level)
-                .init();
+            env_logger::Builder::new().filter_level(log_level).init();
         }
 
         info!("Service started. PID: {}", std::process::id());
