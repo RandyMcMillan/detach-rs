@@ -11,6 +11,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::fs::File;
 
 use detach::daemonize;
+use detach::run_service_async;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "A detached Rust background service")]
@@ -41,21 +42,7 @@ struct Args {
     logging: Option<LevelFilter>,
 }
 
-// This async function will contain the core service logic
-async fn run_service_async() -> anyhow::Result<()> {
-    // Simulated background task
-    let mut count = 0;
-    loop {
-        info!("Service heartbeat #{}", count);
-        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-        count += 1;
 
-        if count > 100 { break; }
-        info!("count: {}", count);
-    }
-    info!("Service shutting down.");
-    Ok(())
-}
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();

@@ -57,6 +57,8 @@
 //! Note: On non-Unix systems, daemonization is not supported, and `--detach` will be ignored.
 use anyhow;
 use std::path::PathBuf;
+use log::{info, LevelFilter};
+use tokio::time::{sleep, Duration};
 
 #[cfg(unix)]
 use libc::{dup2, fork, setsid, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO};
@@ -236,5 +238,29 @@ pub fn setup_logging(_path: &PathBuf, _level: log::LevelFilter) -> Result<(), an
     eprintln!("File logging with log4rs is not supported on this operating system when daemonizing.");
     // For non-unix, if daemonize is called (which it won't be if cfg(not(unix)))
     // then we would rely on main to setup a console logger if not tailing.
+    Ok(())
+}
+
+/// A default asynchronous service future that simulates a background task with heartbeats.
+///
+/// This function can be used as the `service_future` parameter for `daemonize` to create
+/// a simple detached service that logs its heartbeat every 10 seconds and terminates
+/// after 100 heartbeats.
+///
+/// # Returns
+///
+/// - `Ok(())`: If the service completes its simulated task.
+/// - `Err(anyhow::Error)`: If an error occurs during its execution.
+pub async fn run_service_async() -> anyhow::Result<()> {
+    let mut count = 0;
+    loop {
+        log::info!("Service heartbeat #{}", count);
+        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+        count += 1;
+
+        if count > 100 { break; }
+        log::info!("count: {}", count);
+    }
+    log::info!("Service shutting down.");
     Ok(())
 }
