@@ -41,7 +41,15 @@ async fn main() -> anyhow::Result<()> {
         args.log_file.clone()
     };
 
-    let should_detach = args.detach && !args.no_detach && !args.tail;
+    let mut should_detach = args.detach && !args.no_detach && !args.tail;
+
+    #[cfg(not(unix))]
+    {
+        if should_detach {
+            eprintln!("Daemonization is not supported on this operating system.");
+            should_detach = false;
+        }
+    }
 
     if should_detach {
         println!("Detaching process... Check logs at {:?}", log_file_path);

@@ -1,10 +1,16 @@
 use anyhow;
+
+#[cfg(unix)]
 use libc::{dup2, fork, setsid, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO};
-use std::fs::File;
+#[cfg(unix)]
+use std::fs::File as StdFile;
+#[cfg(unix)]
 use std::os::unix::io::AsRawFd;
+#[cfg(unix)]
 use std::path::PathBuf;
 
 /// Performs the double-fork routine to completely detach from the terminal session.
+#[cfg(unix)]
 pub fn daemonize(log_path: &PathBuf) -> Result<(), anyhow::Error> {
     unsafe {
         // 1. First fork: Parent exits, child continues
@@ -24,18 +30,25 @@ pub fn daemonize(log_path: &PathBuf) -> Result<(), anyhow::Error> {
         std::env::set_current_dir("/")?;
 
         // 5. Redirect standard I/O to /dev/null
-        let dev_null = File::open("/dev/null")?;
+        let dev_null = StdFile::open("/dev/null")?;
         let fd = dev_null.as_raw_fd();
         dup2(fd, STDIN_FILENO);
         dup2(fd, STDOUT_FILENO);
         dup2(fd, STDERR_FILENO);
     }
-    
+
     // Setup file logging since we no longer have a stdout
     setup_logging(log_path)?;
     Ok(())
 }
 
+#[cfg(not(unix))]
+pub fn daemonize(_log_path: &PathBuf) -> Result<(), anyhow::Error> {
+    eprintln!("Daemonization is not supported on this operating system.");
+    Ok(()) // Or return an error if you want to explicitly signal failure
+}
+
+#[cfg(unix)]
 pub fn setup_logging(path: &PathBuf) -> Result<(), anyhow::Error> {
     use log4rs::append::file::FileAppender;
     use log4rs::config::{Appender, Config, Root};
@@ -50,5 +63,13 @@ pub fn setup_logging(path: &PathBuf) -> Result<(), anyhow::Error> {
         .build(Root::builder().appender("logfile").build(log::LevelFilter::Info))?;
 
     log4rs::init_config(config)?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+pub fn setup_logging(_path: &PathBuf) -> Result<(), anyhow::Error> {
+    eprintln!("File logging with log4rs is not supported on this operating system when daemonizing.");
+    // For non-unix, if daemonize is called (which it won't be if cfg(not(unix)))
+    // then we would rely on main to setup a console logger if not tailing.
     Ok(())
 }
