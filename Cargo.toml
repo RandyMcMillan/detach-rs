@@ -8,8 +8,8 @@ anyhow = "1.0.100"
 clap = { version = "4.5.51", features = ["color", "derive", "error-context", "help", "std", "suggestions", "unstable-doc", "usage"] }
 env_logger = "0.11.8"
 libc = { version = "=0.2.177", features = ["std"] }
-log = "0.4.29"
-log4rs = "1.4.0"
+log = "^0.4"
+log4rs = { version = "^1.4", features = ["toml", "console_appender", "file_appender"] }
 tokio = { version = "1.48.0", features = ["time", "macros", "rt-multi-thread", "fs", "io-util"] }
 
 [lib]
