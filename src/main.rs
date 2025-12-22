@@ -12,25 +12,36 @@ use detach::daemonize;
 #[command(author, version, about = "A detached Rust background service")]
 struct Args {
     /// Run the process in the background
-    #[arg(long)]
+    #[arg(long, default_value_t = true)]
     detach: bool,
 
+    /// Run the process in the foreground (disable detachment)
+    #[arg(long = "no-detach")]
+    no_detach: bool,
+
+    /// tail logging
+    #[arg(long, short, default_value_t = true)]
+    tail: bool,
+
     /// Path to the log file
-    #[arg(short, long, default_value = "app.log")]
+    //TODO handle canonical relative path
+    #[arg(short, long, default_value = "./detach.log")]
     log_file: PathBuf,
 }
-
-
-
-
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
-    if args.detach {
-        println!("Detaching process... Check logs at {:?}", args.log_file);
-        daemonize(&args.log_file)?;
+    let log_file_path = if args.log_file.is_relative() {
+        std::env::current_dir()?.join(&args.log_file)
+    } else {
+        args.log_file.clone()
+    };
+
+    if args.detach && !args.no_detach {
+        println!("Detaching process... Check logs at {:?}", log_file_path);
+        daemonize(&log_file_path)?;
     } else {
         // If not detaching, just setup simple console logging
         env_logger::init();
@@ -46,6 +57,7 @@ async fn main() -> anyhow::Result<()> {
         count += 1;
         
         if count > 100 { break; }
+        info!("count: {}", count);
     }
 
     info!("Service shutting down.");
