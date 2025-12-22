@@ -1,0 +1,10 @@
+tree c43f1205124f6a621d07326eb881e6a4d136ce31
+parent 0004fcf496da2ee22f0ee2f25f01ef1a1ba6df51
+author randymcmillan <randymcmillan@protonmail.com> 1766435714 -0500
+committer randymcmillan <randymcmillan@protonmail.com> 1766435714 -0500
+
+refactor(daemon): modularize daemonize and logging functions
+
+Moved daemonize and setup_logging functions from main.rs to lib/mod.rs for better modularity and organization.
+
+00-00001a83

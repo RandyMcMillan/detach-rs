@@ -1,24 +1,11 @@
-use clap::Parser;
+use anyhow;
 use libc::{dup2, fork, setsid, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO};
-use log::{info, error};
 use std::fs::File;
 use std::os::unix::io::AsRawFd;
 use std::path::PathBuf;
 
-#[derive(Parser, Debug)]
-#[command(author, version, about = "A detached Rust background service")]
-struct Args {
-    /// Run the process in the background
-    #[arg(long)]
-    detach: bool,
-
-    /// Path to the log file
-    #[arg(short, long, default_value = "app.log")]
-    log_file: PathBuf,
-}
-
 /// Performs the double-fork routine to completely detach from the terminal session.
-fn daemonize(log_path: &PathBuf) -> Result<(), anyhow::Error> {
+pub fn daemonize(log_path: &PathBuf) -> Result<(), anyhow::Error> {
     unsafe {
         // 1. First fork: Parent exits, child continues
         let pid = fork();
@@ -49,7 +36,7 @@ fn daemonize(log_path: &PathBuf) -> Result<(), anyhow::Error> {
     Ok(())
 }
 
-fn setup_logging(path: &PathBuf) -> Result<(), anyhow::Error> {
+pub fn setup_logging(path: &PathBuf) -> Result<(), anyhow::Error> {
     use log4rs::append::file::FileAppender;
     use log4rs::config::{Appender, Config, Root};
     use log4rs::encode::pattern::PatternEncoder;
@@ -63,35 +50,5 @@ fn setup_logging(path: &PathBuf) -> Result<(), anyhow::Error> {
         .build(Root::builder().appender("logfile").build(log::LevelFilter::Info))?;
 
     log4rs::init_config(config)?;
-    Ok(())
-}
-
-
-
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    let args = Args::parse();
-
-    if args.detach {
-        println!("Detaching process... Check logs at {:?}", args.log_file);
-        daemonize(&args.log_file)?;
-    } else {
-        // If not detaching, just setup simple console logging
-        env_logger::init();
-    }
-
-    info!("Service started. PID: {}", std::process::id());
-
-    // Simulated background task
-    let mut count = 0;
-    loop {
-        info!("Service heartbeat #{}", count);
-        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-        count += 1;
-        
-        if count > 100 { break; }
-    }
-
-    info!("Service shutting down.");
     Ok(())
 }
