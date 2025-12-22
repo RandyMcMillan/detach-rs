@@ -58,8 +58,10 @@
 use anyhow;
 use std::path::PathBuf;
 
+use tokio::time::Duration;
+
 #[cfg(unix)]
-use libc::{dup2, fork, setsid, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO};
+use libc::{STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, dup2, fork, setsid};
 #[cfg(unix)]
 use std::fs::File as StdFile;
 #[cfg(unix)]
@@ -136,23 +138,38 @@ use std::os::unix::io::AsRawFd;
 /// This function uses `unsafe` blocks for `fork`, `setsid`, and `dup2` calls, which are POSIX
 /// system calls. Care has been taken to ensure their correct usage for daemonization.
 #[cfg(unix)]
-pub fn daemonize<F>(log_path: &PathBuf, level: log::LevelFilter, timeout: Option<u64>, service_future: F) -> Result<(), anyhow::Error>
+pub fn daemonize<F>(
+    log_path: &PathBuf,
+    level: log::LevelFilter,
+    timeout: Option<u64>,
+    service_future: F,
+) -> Result<(), anyhow::Error>
 where
     F: std::future::Future<Output = Result<(), anyhow::Error>> + Send + 'static,
 {
     unsafe {
         // 1. First fork: Parent exits, child continues
         let pid = fork();
-        if pid < 0 { return Err(anyhow::anyhow!("First fork failed")); }
-        if pid > 0 { std::process::exit(0); }
+        if pid < 0 {
+            return Err(anyhow::anyhow!("First fork failed"));
+        }
+        if pid > 0 {
+            std::process::exit(0);
+        }
 
         // 2. Create a new session to lose the controlling TTY
-        if setsid() < 0 { return Err(anyhow::anyhow!("Failed to create new session")); }
+        if setsid() < 0 {
+            return Err(anyhow::anyhow!("Failed to create new session"));
+        }
 
         // 3. Second fork: Prevents the process from re-acquiring a TTY
         let pid = fork();
-        if pid < 0 { return Err(anyhow::anyhow!("Second fork failed")); }
-        if pid > 0 { std::process::exit(0); }
+        if pid < 0 {
+            return Err(anyhow::anyhow!("Second fork failed"));
+        }
+        if pid > 0 {
+            std::process::exit(0);
+        }
 
         // 4. Change working directory to root to avoid locking the mount point
         std::env::set_current_dir("/")?;
@@ -205,7 +222,12 @@ where
 }
 
 #[cfg(not(unix))]
-pub fn daemonize<F>(_log_path: &PathBuf, _level: log::LevelFilter, _timeout: Option<u64>, _service_future: F) -> Result<(), anyhow::Error>
+pub fn daemonize<F>(
+    _log_path: &PathBuf,
+    _level: log::LevelFilter,
+    _timeout: Option<u64>,
+    _service_future: F,
+) -> Result<(), anyhow::Error>
 where
     F: std::future::Future<Output = Result<(), anyhow::Error>> + Send + 'static,
 {
@@ -215,7 +237,6 @@ where
 
 #[cfg(unix)]
 pub fn setup_logging(path: &PathBuf, level: log::LevelFilter) -> Result<(), anyhow::Error> {
-    use log::LevelFilter;
     use log4rs::append::file::FileAppender;
     use log4rs::config::{Appender, Config, Root};
     use log4rs::encode::pattern::PatternEncoder;
@@ -235,7 +256,9 @@ pub fn setup_logging(path: &PathBuf, level: log::LevelFilter) -> Result<(), anyh
 #[cfg(not(unix))]
 pub fn setup_logging(_path: &PathBuf, _level: log::LevelFilter) -> Result<(), anyhow::Error> {
     use log::LevelFilter;
-    eprintln!("File logging with log4rs is not supported on this operating system when daemonizing.");
+    eprintln!(
+        "File logging with log4rs is not supported on this operating system when daemonizing."
+    );
     // For non-unix, if daemonize is called (which it won't be if cfg(not(unix)))
     // then we would rely on main to setup a console logger if not tailing.
     Ok(())
@@ -252,15 +275,18 @@ pub fn setup_logging(_path: &PathBuf, _level: log::LevelFilter) -> Result<(), an
 /// - `Ok(())`: If the service completes its simulated task.
 /// - `Err(anyhow::Error)`: If an error occurs during its execution.
 pub async fn run_service_async() -> anyhow::Result<()> {
+    use log::info;
     let mut count = 0;
     loop {
-        log::info!("Service heartbeat #{}", count);
-        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+        info!("Service heartbeat #{}", count);
+        tokio::time::sleep(Duration::from_secs(10)).await;
         count += 1;
 
-        if count > 100 { break; }
-        log::info!("count: {}", count);
+        if count > 100 {
+            break;
+        }
+        info!("count: {}", count);
     }
-    log::info!("Service shutting down.");
+    info!("Service shutting down.");
     Ok(())
 }
