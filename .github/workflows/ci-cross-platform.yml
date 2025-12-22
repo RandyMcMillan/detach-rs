@@ -42,40 +42,25 @@ jobs:
         findstr "Service heartbeat" test_no_detach.log
       if: runner.os == 'Windows'
 
-    - name: Run command-line tests (Tailing)
+    - name: Run command-line tests (Tailing with Timeout)
       run: |
-        # Run in background because --tail keeps running
-        ./target/release/detach-rs --tail --log-file test_tail.log &
-        # Give it a moment to start and write logs
-        sleep 5
-        # Check if log file contains heartbeat messages
-        grep "Service heartbeat" test_tail.log
-        # Kill the background process
-        pkill -f "detach-rs --tail" || true # '|| true' to prevent failure if process is already gone
+        ./target/release/detach-rs --tail --log-file test_tail.log --timeout 10
+        sleep 12 # Give it time to timeout
+        grep "Timeout reached" test_tail.log
       if: runner.os != 'Windows'
 
-    - name: Run command-line tests (Tailing)
+    - name: Run command-line tests (Tailing with Timeout)
       run: |
-        # Start in background; 'start' command on Windows
-        start /B .\target\release\detach-rs.exe --tail --log-file test_tail.log
-        # Give it a moment to start and write logs
-        timeout /T 5 /NOBREAK >nul
-        # Check if log file contains heartbeat messages
-        findstr "Service heartbeat" test_tail.log
-        # Kill the background process; taskkill /IM is by image name
-        taskkill /IM detach-rs.exe /F || true # '|| true' to prevent failure if process is already gone
+        .\target\release\detach-rs.exe --tail --log-file test_tail.log --timeout 10
+        timeout /T 12 /NOBREAK >nul # Give it time to timeout
+        findstr "Timeout reached" test_tail.log
       if: runner.os == 'Windows'
 
-    - name: Test daemonization (Unix-like)
+    - name: Test daemonization with Timeout (Unix-like)
       run: |
-        # Run default daemonization
-        ./target/release/detach-rs --log-file test_daemonize.log &
-        # Give it a moment to detach and write some logs
-        sleep 5
-        # Check if the log file was created and contains expected output
-        grep "Service heartbeat" test_daemonize.log
-        # Attempt to find and kill the daemonized process.
-        pkill -f "detach-rs" || true
+        ./target/release/detach-rs --log-file test_daemonize.log --timeout 10 & # Run daemonized with timeout
+        sleep 12 # Give the daemonized process time to start, timeout, and write to log
+        grep "Timeout reached" test_daemonize.log
       if: runner.os != 'Windows'
 
     - name: Test default (Windows - daemonization not supported)
