@@ -57,8 +57,6 @@
 //! Note: On non-Unix systems, daemonization is not supported, and `--detach` will be ignored.
 use anyhow;
 use std::path::PathBuf;
-use log::{info, LevelFilter};
-use tokio::time::{sleep, Duration};
 
 #[cfg(unix)]
 use libc::{dup2, fork, setsid, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO};
@@ -217,6 +215,7 @@ where
 
 #[cfg(unix)]
 pub fn setup_logging(path: &PathBuf, level: log::LevelFilter) -> Result<(), anyhow::Error> {
+    use log::LevelFilter;
     use log4rs::append::file::FileAppender;
     use log4rs::config::{Appender, Config, Root};
     use log4rs::encode::pattern::PatternEncoder;
@@ -235,6 +234,7 @@ pub fn setup_logging(path: &PathBuf, level: log::LevelFilter) -> Result<(), anyh
 
 #[cfg(not(unix))]
 pub fn setup_logging(_path: &PathBuf, _level: log::LevelFilter) -> Result<(), anyhow::Error> {
+    use log::LevelFilter;
     eprintln!("File logging with log4rs is not supported on this operating system when daemonizing.");
     // For non-unix, if daemonize is called (which it won't be if cfg(not(unix)))
     // then we would rely on main to setup a console logger if not tailing.
