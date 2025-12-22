@@ -1,3 +1,60 @@
+//! This crate provides utilities for daemonizing Rust processes.
+//!
+//! # How to use `detach-rs` (the binary)
+//!
+//! The `detach-rs` binary (located at `src/bin/detach-rs.rs`) is a detached Rust background service
+//! that can be controlled via command-line arguments.
+//!
+//! ## Command-Line Arguments:
+//!
+//! *   **`--detach`**:
+//!     Run the process in the background. This is the default behavior.
+//!
+//! *   **`--no-detach`**:
+//!     Run the process in the foreground, disabling daemonization.
+//!
+//! *   **`--tail`**:
+//!     Enables log tailing. When used, the service will run in the foreground and
+//!     output its logs directly to the console while also writing them to the log file.
+//!
+//! *   **`--log-file <PATH>`**:
+//!     Specifies the path to the log file. Defaults to `./detach.log`.
+//!     Example: `--log-file /var/log/my_service.log`
+//!
+//! *   **`-t, --timeout <SECONDS>`**:
+//!     Sets a timeout (in seconds) after which the service will automatically terminate.
+//!     This applies to both detached and non-detached modes.
+//!     Example: `--timeout 60` (service will run for 60 seconds)
+//!
+//! *   **`-l, --logging <LEVEL>`**:
+//!     Sets the logging level for the service.
+//!     Supported levels: `error`, `warn`, `info`, `debug`, `trace`.
+//!     Defaults to `info`.
+//!     Example: `--logging debug`
+//!
+//! ## Examples:
+//!
+//! *   **Run in background with default settings:**
+//!     ```bash
+//!     ./target/release/detach-rs
+//!     ```
+//!
+//! *   **Run in foreground with debug logging:**
+//!     ```bash
+//!     ./target/release/detach-rs --no-detach --logging debug
+//!     ```
+//!
+//! *   **Run in background, log to a specific file, and terminate after 5 minutes:**
+//!     ```bash
+//!     ./target/release/detach-rs --log-file /tmp/my_daemon.log --timeout 300
+//!     ```
+//!
+//! *   **Tail logs of a foreground service:**
+//!     ```bash
+//!     ./target/release/detach-rs --no-detach --tail
+//!     ```
+//!
+//! Note: On non-Unix systems, daemonization is not supported, and `--detach` will be ignored.
 use anyhow;
 use std::path::PathBuf;
 use log::LevelFilter;
