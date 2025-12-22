@@ -1,48 +1,90 @@
-#![allow(unused)]
-use clap::{Parser, ValueEnum};
-#[cfg(unix)]
-use libc::{dup2, fork, setsid, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO};
-use log::{info, LevelFilter};
-use std::fs::File as StdFile; // Rename to avoid conflict with tokio::fs::File
-#[cfg(unix)]
-use std::os::unix::io::AsRawFd;
-use std::path::PathBuf;
-use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::fs::File;
+// This async function will contain the core service logic
+async fn run_service_async(args: Args, log_file_path: PathBuf, log_level: LevelFilter) -> anyhow::Result<()> {
+    // If not detaching, setup simple console logging or tailing
+    if args.tail {
+        // Setup a basic logger that will output to stderr as usual,
+        // but also start a tailing process.
+        env_logger::Builder::new()
+            .filter_level(log_level)
+            .init();
+        println!("Tailing log file: {:?}", log_file_path);
 
-use detach::daemonize;
+        tokio::spawn(async move {
+            use tokio::io::{AsyncBufReadExt, BufReader};
+            use tokio::fs::File;
+            use tokio::time::sleep;
+            use std::time::Duration;
 
-#[derive(Parser, Debug)]
-#[command(author, version, about = "A detached Rust background service")]
-struct Args {
-    /// Run the process in the background
-    #[arg(long, default_value_t = true)]
-    detach: bool,
+            // Loop until the file is created.
+            loop {
+                match File::open(&log_file_path).await {
+                    Ok(file) => {
+                        let mut reader = BufReader::new(file);
+                        let mut buffer = String::new();
+                        let mut offset = 0; // Keep track of the read offset
 
-    /// Run the process in the foreground (disable detachment)
-    #[arg(long = "no-detach")]
-    no_detach: bool,
+                        loop {
+                            buffer.clear();
+                            let bytes_read = reader.read_line(&mut buffer).await.unwrap_or(0);
 
-    /// tail logging
-    #[arg(long, default_value_t = false)]
-    tail: bool,
+                            if bytes_read == 0 {
+                                // End of file, wait and try again
+                                sleep(Duration::from_millis(500)).await;
+                            } else {
+                                // New data, print it
+                                print!("{}", buffer);
+                                offset += bytes_read as u64;
+                            }
+                        }
+                    },
+                    Err(e) => {
+                        eprintln!("Error opening log file for tailing: {:?}. Retrying...", e);
+                        sleep(Duration::from_secs(1)).await;
+                    }
+                }
+            }
+        });
+    } else {
+        // If not detaching and not tailing, just setup simple console logging
+        env_logger::Builder::new()
+            .filter_level(log_level)
+            .init();
+    }
 
-    /// Path to the log file
-    //TODO handle canonical relative path
-    #[arg(long, default_value = "./detach.log")]
-    log_file: PathBuf,
+    info!("Service started. PID: {}", std::process::id());
 
-    /// Timeout after a specified number of seconds
-    #[arg(long, short, value_name = "SECONDS")]
-    timeout: Option<u64>,
+    // Simulated background task
+    let mut count = 0;
+    let main_loop_future = async {
+        loop {
+            info!("Service heartbeat #{}", count);
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+            count += 1;
 
-    /// Set the logging level (e.g., "error", "warn", "info", "debug", "trace")
-    #[arg(long, short, value_name = "LEVEL", value_enum)]
-    logging: Option<LevelFilter>,
+            if count > 100 { break; }
+            info!("count: {}", count);
+        }
+    };
+
+    if let Some(timeout_seconds) = args.timeout {
+        info!("Setting timeout for {} seconds.", timeout_seconds);
+        tokio::select! {
+            _ = main_loop_future => {
+                info!("Main loop finished before timeout.");
+            }
+            _ = tokio::time::sleep(std::time::Duration::from_secs(timeout_seconds)) => {
+                info!("Timeout reached after {} seconds. Terminating service.", timeout_seconds);
+            }
+        }
+    } else {
+        main_loop_future.await;
+    }
+
+    info!("Service shutting down.");
+    Ok(())
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
     let log_file_path = if args.log_file.is_relative() {
@@ -65,89 +107,22 @@ async fn main() -> anyhow::Result<()> {
 
     if should_detach {
         println!("Detaching process... Check logs at {:?}", log_file_path);
-        daemonize(&log_file_path, log_level)?;
+        // daemonize call will cause parent to exit. Child continues here.
+        daemonize(&log_file_path, log_level, args.timeout)?;
+
+        // IMPORTANT: Re-initialize tokio runtime AFTER daemonization
+        // This prevents issues with forking a multi-threaded runtime.
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(run_service_async(args, log_file_path, log_level))
     } else {
-        // If not detaching, setup simple console logging or tailing
-        if args.tail {
-            // Setup a basic logger that will output to stderr as usual,
-            // but also start a tailing process.
-            env_logger::Builder::new()
-                .filter_level(log_level)
-                .init();
-            println!("Tailing log file: {:?}", log_file_path);
-
-            tokio::spawn(async move {
-                use tokio::io::{AsyncBufReadExt, BufReader};
-                use tokio::fs::File;
-                use tokio::time::sleep;
-                use std::time::Duration;
-
-                // Loop until the file is created.
-                loop {
-                    match File::open(&log_file_path).await {
-                        Ok(file) => {
-                            let mut reader = BufReader::new(file);
-                            let mut buffer = String::new();
-                            let mut offset = 0; // Keep track of the read offset
-
-                            loop {
-                                buffer.clear();
-                                let bytes_read = reader.read_line(&mut buffer).await.unwrap_or(0);
-
-                                if bytes_read == 0 {
-                                    // End of file, wait and try again
-                                    sleep(Duration::from_millis(500)).await;
-                                } else {
-                                    // New data, print it
-                                    print!("{}", buffer);
-                                    offset += bytes_read as u64;
-                                }
-                            }
-                        },
-                        Err(e) => {
-                            eprintln!("Error opening log file for tailing: {:?}. Retrying...", e);
-                            sleep(Duration::from_secs(1)).await;
-                        }
-                    }
-                }
-            });
-        } else {
-            // If not detaching and not tailing, just setup simple console logging
-            env_logger::Builder::new()
-                .filter_level(log_level)
-                .init();
-        }
+        // If not detaching, just run the async service directly with a new tokio runtime
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(run_service_async(args, log_file_path, log_level))
     }
-
-    info!("Service started. PID: {}", std::process::id());
-
-    // Simulated background task
-    let mut count = 0;
-    let main_loop_future = async {
-        loop {
-            info!("Service heartbeat #{}", count);
-            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-            count += 1;
-            
-            if count > 100 { break; }
-            info!("count: {}", count);
-        }
-    };
-
-    if let Some(timeout_seconds) = args.timeout {
-        info!("Setting timeout for {} seconds.", timeout_seconds);
-        tokio::select! {
-            _ = main_loop_future => {
-                info!("Main loop finished before timeout.");
-            }
-            _ = tokio::time::sleep(std::time::Duration::from_secs(timeout_seconds)) => {
-                info!("Timeout reached after {} seconds. Terminating service.", timeout_seconds);
-            }
-        }
-    } else {
-        main_loop_future.await;
-    }
-
-    info!("Service shutting down.");
-    Ok(())
 }
