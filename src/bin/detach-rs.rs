@@ -1,8 +1,8 @@
 #![allow(unused)]
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 #[cfg(unix)]
 use libc::{dup2, fork, setsid, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO};
-use log::info;
+use log::{info, LevelFilter};
 use std::fs::File as StdFile; // Rename to avoid conflict with tokio::fs::File
 #[cfg(unix)]
 use std::os::unix::io::AsRawFd;
@@ -35,6 +35,10 @@ struct Args {
     /// Timeout after a specified number of seconds
     #[arg(long, short, value_name = "SECONDS")]
     timeout: Option<u64>,
+
+    /// Set the logging level (e.g., "error", "warn", "info", "debug", "trace")
+    #[arg(long, short, value_name = "LEVEL", value_enum)]
+    logging: Option<LevelFilter>,
 }
 
 #[tokio::main]
@@ -46,6 +50,8 @@ async fn main() -> anyhow::Result<()> {
     } else {
         args.log_file.clone()
     };
+
+    let log_level = args.logging.unwrap_or(LevelFilter::Info);
 
     let mut should_detach = args.detach && !args.no_detach && !args.tail;
 
@@ -59,13 +65,15 @@ async fn main() -> anyhow::Result<()> {
 
     if should_detach {
         println!("Detaching process... Check logs at {:?}", log_file_path);
-        daemonize(&log_file_path)?;
+        daemonize(&log_file_path, log_level)?;
     } else {
         // If not detaching, setup simple console logging or tailing
         if args.tail {
             // Setup a basic logger that will output to stderr as usual,
             // but also start a tailing process.
-            env_logger::init();
+            env_logger::Builder::new()
+                .filter_level(log_level)
+                .init();
             println!("Tailing log file: {:?}", log_file_path);
 
             tokio::spawn(async move {
@@ -105,7 +113,9 @@ async fn main() -> anyhow::Result<()> {
             });
         } else {
             // If not detaching and not tailing, just setup simple console logging
-            env_logger::init();
+            env_logger::Builder::new()
+                .filter_level(log_level)
+                .init();
         }
     }
 

@@ -1,5 +1,6 @@
 use anyhow;
 use std::path::PathBuf;
+use log::LevelFilter;
 
 #[cfg(unix)]
 use libc::{dup2, fork, setsid, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO};
@@ -48,7 +49,7 @@ pub fn daemonize(_log_path: &PathBuf) -> Result<(), anyhow::Error> {
 }
 
 #[cfg(unix)]
-pub fn setup_logging(path: &PathBuf) -> Result<(), anyhow::Error> {
+pub fn setup_logging(path: &PathBuf, level: log::LevelFilter) -> Result<(), anyhow::Error> {
     use log4rs::append::file::FileAppender;
     use log4rs::config::{Appender, Config, Root};
     use log4rs::encode::pattern::PatternEncoder;
@@ -59,7 +60,7 @@ pub fn setup_logging(path: &PathBuf) -> Result<(), anyhow::Error> {
 
     let config = Config::builder()
         .appender(Appender::builder().build("logfile", Box::new(logfile)))
-        .build(Root::builder().appender("logfile").build(log::LevelFilter::Info))?;
+        .build(Root::builder().appender("logfile").build(level))?;
 
     log4rs::init_config(config)?;
     Ok(())
