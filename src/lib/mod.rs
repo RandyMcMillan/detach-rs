@@ -38,7 +38,7 @@ pub fn daemonize(log_path: &PathBuf) -> Result<(), anyhow::Error> {
     }
 
     // Setup file logging since we no longer have a stdout
-    setup_logging(log_path)?;
+    setup_logging(log_path, log::LevelFilter::Info)?;
     Ok(())
 }
 

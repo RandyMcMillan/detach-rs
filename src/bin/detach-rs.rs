@@ -24,12 +24,12 @@ struct Args {
     no_detach: bool,
 
     /// tail logging
-    #[arg(long, short, default_value_t = false)]
+    #[arg(long, default_value_t = false)]
     tail: bool,
 
     /// Path to the log file
     //TODO handle canonical relative path
-    #[arg(short, long, default_value = "./detach.log")]
+    #[arg(long, default_value = "./detach.log")]
     log_file: PathBuf,
 
     /// Timeout after a specified number of seconds
@@ -65,7 +65,7 @@ async fn main() -> anyhow::Result<()> {
 
     if should_detach {
         println!("Detaching process... Check logs at {:?}", log_file_path);
-        daemonize(&log_file_path, log_level)?;
+        daemonize(&log_file_path)?;
     } else {
         // If not detaching, setup simple console logging or tailing
         if args.tail {
