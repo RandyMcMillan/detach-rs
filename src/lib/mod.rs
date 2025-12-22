@@ -83,6 +83,7 @@ where
 pub fn daemonize<F>(_log_path: &PathBuf, _level: log::LevelFilter, _timeout: Option<u64>, _service_future: F) -> Result<(), anyhow::Error>
 where
     F: std::future::Future<Output = Result<(), anyhow::Error>> + Send + 'static,
+{
     eprintln!("Daemonization is not supported on this operating system.");
     Ok(()) // Or return an error if you want to explicitly signal failure
 }
