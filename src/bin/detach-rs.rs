@@ -1,8 +1,10 @@
 #![allow(unused)]
 use clap::Parser;
+#[cfg(unix)]
 use libc::{dup2, fork, setsid, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO};
 use log::info;
 use std::fs::File as StdFile; // Rename to avoid conflict with tokio::fs::File
+#[cfg(unix)]
 use std::os::unix::io::AsRawFd;
 use std::path::PathBuf;
 use tokio::io::{AsyncBufReadExt, BufReader};
