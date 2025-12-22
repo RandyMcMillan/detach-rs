@@ -22,7 +22,7 @@ jobs:
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
       with:
-        toolchain: [stable, nightly]
+        toolchain: ${{ matrix.toolchain }}
     - name: Build
       run: cargo build --verbose
     - name: Build Release
