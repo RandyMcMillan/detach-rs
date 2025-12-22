@@ -1,4 +1,5 @@
 use anyhow;
+use std::path::PathBuf;
 
 #[cfg(unix)]
 use libc::{dup2, fork, setsid, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO};
@@ -6,8 +7,6 @@ use libc::{dup2, fork, setsid, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO};
 use std::fs::File as StdFile;
 #[cfg(unix)]
 use std::os::unix::io::AsRawFd;
-#[cfg(unix)]
-use std::path::PathBuf;
 
 /// Performs the double-fork routine to completely detach from the terminal session.
 #[cfg(unix)]
