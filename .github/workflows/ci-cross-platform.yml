@@ -294,6 +294,112 @@ jobs:
         ./target/release/detach-rs.exe --detach 2>&1 | findstr "Daemonization is not supported on this operating system."
       if: runner.os == 'Windows'
 
+    - name: Test --detach conflict with --tail (Unix)
+      shell: bash
+      run: |
+        ./target/release/detach-rs --detach --tail 2>&1 | grep -E "error: the argument '--detach' cannot be used with '--tail'|error: the argument '--tail' cannot be used with '--detach'"
+      if: runner.os != 'Windows'
+
+    - name: Test --detach conflict with --tail (Windows)
+      shell: bash
+      run: |
+        ./target/release/detach-rs.exe --detach --tail 2>&1 | findstr /R "error: the argument '--detach' cannot be used with '--tail' error: the argument '--tail' cannot be used with '--detach'"
+      if: runner.os == 'Windows'
+
+    - name: Test --command conflict with --detach (Unix)
+      shell: bash
+      run: |
+        ./target/release/detach-rs --command "echo hi" --detach 2>&1 | grep -E "error: the argument '--command' cannot be used with '--detach'|error: the argument '--detach' cannot be used with '--command'"
+      if: runner.os != 'Windows'
+
+    - name: Test --command conflict with --detach (Windows)
+      shell: bash
+      run: |
+        ./target/release/detach-rs.exe --command "echo hi" --detach 2>&1 | findstr /R "error: the argument '--command' cannot be used with '--detach' error: the argument '--detach' cannot be used with '--command'"
+      if: runner.os == 'Windows'
+
+    - name: Test --command conflict with --tail (Unix)
+      shell: bash
+      run: |
+        ./target/release/detach-rs --command "echo hi" --tail 2>&1 | grep -E "error: the argument '--command' cannot be used with '--tail'|error: the argument '--tail' cannot be used with '--command'"
+      if: runner.os != 'Windows'
+
+    - name: Test --command conflict with --tail (Windows)
+      shell: bash
+      run: |
+        ./target/release/detach-rs.exe --command "echo hi" --tail 2>&1 | findstr /R "error: the argument '--command' cannot be used with '--tail' error: the argument '--tail' cannot be used with '--command'"
+      if: runner.os == 'Windows'
+
+    - name: Test invalid --timeout (non-numeric) (Unix)
+      shell: bash
+      run: |
+        ./target/release/detach-rs --timeout abc 2>&1 | grep "error: Invalid value for '<SECONDS>'"
+      if: runner.os != 'Windows'
+
+    - name: Test invalid --timeout (non-numeric) (Windows)
+      shell: bash
+      run: |
+        ./target/release/detach-rs.exe --timeout abc 2>&1 | findstr "error: Invalid value for '<SECONDS>'"
+      if: runner.os == 'Windows'
+
+    - name: Test invalid --logging level (Unix)
+      shell: bash
+      run: |
+        ./target/release/detach-rs --logging InvalidLevel 2>&1 | grep "error: Invalid value for '<LEVEL>'"
+      if: runner.os != 'Windows'
+
+    - name: Test invalid --logging level (Windows)
+      shell: bash
+      run: |
+        ./target/release/detach-rs.exe --logging InvalidLevel 2>&1 | findstr "error: Invalid value for '<LEVEL>'"
+      if: runner.os == 'Windows'
+
+    - name: Test invalid --log-file path (cannot create) (Unix)
+      shell: bash
+      run: |
+        ./target/release/detach-rs --log-file /nonexistent/path/log.log 2>&1 | grep "Error: No such file or directory"
+      if: runner.os != 'Windows'
+
+    - name: Test invalid --log-file path (cannot create) (Windows)
+      shell: bash
+      run: |
+        ./target/release/detach-rs.exe --log-file C:\nonexistent\path\log.log 2>&1 | findstr "Error: The system cannot find the path specified."
+      if: runner.os == 'Windows'
+
+    - name: Test --command with empty string (Unix)
+      shell: bash
+      run: |
+        ./target/release/detach-rs --no-detach --command "" --log-file test_cmd_empty.log
+        grep "Executing command: \"\"" test_cmd_empty.log
+        grep "Command executed successfully." test_cmd_empty.log
+      if: runner.os != 'Windows'
+
+    - name: Test --command with empty string (Windows)
+      shell: bash
+      run: |
+        ./target/release/detach-rs.exe --no-detach --command "" --log-file test_cmd_empty.log
+        findstr "Executing command: \"\"" test_cmd_empty.log
+        findstr "Command executed successfully." test_cmd_empty.log
+      if: runner.os == 'Windows'
+
+    - name: Test --command with special characters (Unix)
+      shell: bash
+      run: |
+        ./target/release/detach-rs --no-detach --command "echo hello > output.txt && cat output.txt" --log-file test_cmd_special.log
+        grep "Executing command: \"echo hello > output.txt && cat output.txt\"" test_cmd_special.log
+        grep "Command executed successfully." test_cmd_special.log
+        grep "hello" output.txt # Verify command's effect
+      if: runner.os != 'Windows'
+
+    - name: Test --command with special characters (Windows)
+      shell: bash
+      run: |
+        ./target/release/detach-rs.exe --no-detach --command "echo hello > output.txt & type output.txt" --log-file test_cmd_special.log
+        findstr "Executing command: \"echo hello > output.txt & type output.txt\"" test_cmd_special.log
+        findstr "Command executed successfully." test_cmd_special.log
+        findstr "hello" output.txt # Verify command's effect
+      if: runner.os == 'Windows'
+
     - name: Test --logging trace --command "cargo install gnostr" (Unix)
       shell: bash
       run: |
