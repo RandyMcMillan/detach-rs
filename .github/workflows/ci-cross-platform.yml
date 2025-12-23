@@ -102,7 +102,7 @@ jobs:
     - name: Test --detach with timeout (Unix)
       shell: bash
       run: |
-        ./target/release/detach-rs --log-file test_daemonize_timeout.log --timeout 10 --detach &
+        ./target/release/detach-rs --log-file test_daemonize_timeout.log --timeout 10 --detach
         sleep 12
         grep "Timeout reached after 10 seconds. Terminating service." test_daemonize_timeout.log
       if: runner.os != 'Windows'
@@ -112,7 +112,7 @@ jobs:
       env:
         DETACH_TEST_HEARTBEATS: 2
       run: |
-        ./target/release/detach-rs --log-file test_daemonize_success.log --detach &
+        ./target/release/detach-rs --log-file test_daemonize_success.log --detach
         sleep 22 # Give the daemonized process time to start and complete (2 heartbeats * 10s = 20s)
         grep "Daemon process started." test_daemonize_success.log
         grep "Service shutting down." test_daemonize_success.log
