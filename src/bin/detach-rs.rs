@@ -12,6 +12,10 @@ use std::path::PathBuf;
 // REMOVED: use std::process::Command;
 use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, BufReader};
+#[cfg(unix)]
+use termios::{Termios, TCSANOW, tcsetattr};
+#[cfg(unix)]
+use scopeguard::defer;
 
 use detach::Args;
 use detach::daemonize;
@@ -21,6 +25,18 @@ use detach::setup_logging;
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
+
+    #[cfg(unix)]
+    let original_termios = Termios::from_fd(0).ok(); // Get original stdin settings
+
+    #[cfg(unix)]
+    if let Some(termios) = original_termios {
+        defer! {
+            if let Err(e) = tcsetattr(0, TCSANOW, &termios) {
+                eprintln!("Error restoring terminal: {}", e);
+            }
+        }
+    }
 
     // Define the default log file path
     let default_log_file = PathBuf::from("./detach.log");
@@ -54,7 +70,7 @@ fn main() -> anyhow::Result<()> {
             match run_command_and_exit(cmd_str, &log_file_path, log_level, args.timeout).await {
                 Ok(_) => std::process::exit(0),
                 Err(e) => {
-                    eprintln!("Command execution failed: {}", e);
+                    // The error is already logged by run_command_and_exit
                     std::process::exit(1); // Exit with a non-zero code for failure
                 }
             }
