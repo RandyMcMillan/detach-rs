@@ -65,21 +65,41 @@ jobs:
         findstr "Command executed successfully." test_no_detach_cmd_success.log
       if: runner.os == 'Windows'
 
-    - name: Test --no-detach with command (Unix)
+    - name: Test --command that fails (Unix)
       shell: bash
       run: |
-        ./target/release/detach-rs --no-detach --log-file test_no_detach_cmd_success.log --command "echo hello"
-        grep "Executing command: \"echo hello\"" test_no_detach_cmd_success.log
-        grep "Command executed successfully." test_no_detach_cmd_success.log
+        ./target/release/detach-rs --command "false" --log-file test_cmd_fail.log
+        grep "Executing command: \"false\"" test_cmd_fail.log
+        grep "Command failed with exit code:" test_cmd_fail.log
       if: runner.os != 'Windows'
 
-    - name: Test --no-detach with command (Windows)
+    - name: Test --command that fails (Windows)
       shell: bash
       run: |
-        ./target/release/detach-rs.exe --no-detach --log-file test_no_detach_cmd_success.log --command "echo hello"
-        findstr "Executing command: \"echo hello\"" test_no_detach_cmd_success.log
-        findstr "Command executed successfully." test_no_detach_cmd_success.log
+        # Use `cmd /c exit 1` for a failing command on Windows
+        ./target/release/detach-rs.exe --command "cmd /c exit 1" --log-file test_cmd_fail.log
+        findstr "Executing command: \"cmd /c exit 1\"" test_cmd_fail.log
+        findstr "Command failed with exit code:" test_cmd_fail.log
       if: runner.os == 'Windows'
+
+    - name: Test --command with timeout (Unix)
+      shell: bash
+      run: |
+        ./target/release/detach-rs --command "sleep 5" --timeout 2 --log-file test_cmd_timeout.log
+        grep "Executing command: \"sleep 5\"" test_cmd_timeout.log
+        grep "Command timed out after 2 seconds." test_cmd_timeout.log
+      if: runner.os != 'Windows'
+
+    - name: Test --command with timeout (Windows)
+      shell: bash
+      run: |
+        # Use Windows `timeout` command, but `detach-rs`'s internal timeout should trigger first
+        ./target/release/detach-rs.exe --command "timeout /T 5 /NOBREAK >nul" --timeout 2 --log-file test_cmd_timeout.log
+        findstr "Executing command: \"timeout /T 5 /NOBREAK >nul\"" test_cmd_timeout.log
+        findstr "Command timed out after 2 seconds." test_cmd_timeout.log
+      if: runner.os == 'Windows'
+
+
 
 
 
