@@ -98,8 +98,20 @@ fn main() -> anyhow::Result<()> {
             // All setup_logging calls removed from here
             debug!("Service started. PID: {}", std::process::id());
 
-            // Run the async service directly
-            service_future.await?;
+            // Run the async service directly, respecting timeout if present
+            if let Some(timeout_seconds) = args.timeout {
+                debug!("Setting timeout for {} seconds.", timeout_seconds);
+                tokio::select! {
+                    _ = service_future => {
+                        debug!("Service future finished before timeout.");
+                    }
+                    _ = tokio::time::sleep(tokio::time::Duration::from_secs(timeout_seconds)) => {
+                        debug!("Timeout reached after {} seconds. Terminating service.", timeout_seconds);
+                    }
+                }
+            } else {
+                service_future.await?;
+            }
 
             info!("Service shutting down.");
             Ok(())
