@@ -274,6 +274,20 @@ jobs:
         findstr "Command timed out after 2 seconds." test_logging_warn.log # Info message should be present
       if: runner.os == 'Windows'
 
+    - name: Test --logging Off (Unix)
+      shell: bash
+      run: |
+        ./target/release/detach-rs --no-detach --log-file test_logging_off.log --logging Off --command "echo hello"
+        ! test -s test_logging_off.log # Assert that the log file is empty
+      if: runner.os != 'Windows'
+
+    - name: Test --logging Off (Windows)
+      shell: bash
+      run: |
+        ./target/release/detach-rs.exe --no-detach --log-file test_logging_off.log --logging Off --command "echo hello"
+        ! test -s test_logging_off.log # Assert that the log file is empty
+      if: runner.os == 'Windows'
+
     - name: Test --detach (Windows - Daemonization not supported)
       shell: bash
       run: |
@@ -284,32 +298,37 @@ jobs:
       shell: bash
       run: |
         ./target/release/detach-rs --log-file gnostr.log --logging trace --command "cargo install gnostr -vv"
+        grep "Executing command: \"cargo install gnostr -vv\"" gnostr.log
       if: runner.os != 'Windows'
     - name: Test --logging trace --command "gnostr" (Unix)
       shell: bash
       run: |
         ./target/release/detach-rs --log-file gnostr.log --logging trace --command "gnostr" --timeout 20
+        grep "Executing command: \"gnostr\"" gnostr.log
+        grep "Command timed out after 20 seconds." gnostr.log
       if: runner.os != 'Windows'
 
-    - name: Test --logging trace --command "cargo install gnostr-relay" (Unix)
+    - name: Test --logging Warn --command "cargo install gnostr-relay" (Unix)
       shell: bash
       run: |
         ./target/release/detach-rs --log-file gnostr-relay.log --logging Warn --command "cargo install gnostr-relay" --timeout 10
-      if: runner.os != 'Windows'
-
-    - name: Test --logging trace --command "gnostr-relay" (Unix)
-      shell: bash
-      run: |
-        ./target/release/gnostr-relay-detach --log-file gnostr-relay.log --logging info --command "gnostr-relay" --timeout 10
-        ! grep -q "Executing command: \"gnostr-relay\"" gnostr-relay.log
-        grep "Command timed out after 10 seconds. Attempting graceful shutdown (SIGINT)." gnostr-relay.logi
+        grep "Executing command: \"cargo install gnostr-relay\"" gnostr-relay.log
         grep "Command timed out after 10 seconds." gnostr-relay.log
       if: runner.os != 'Windows'
-    - name: Test --logging trace --command "gnostr" (Unix)
+
+    - name: Test --logging info --command "gnostr-relay" (Unix)
       shell: bash
       run: |
-        ./target/release/gnostr-relay-detach --log-file gnostr.log --logging info --command "gnostr" --timeout 10
-        ! grep -q "Executing command: \"gnostr\"" gnostr.log # Info message should NOT be present
+        ./target/release/detach-rs --log-file gnostr-relay.log --logging info --command "gnostr-relay" --timeout 10
+        grep "Executing command: \"gnostr-relay\"" gnostr-relay.log
+        grep "Command timed out after 10 seconds. Attempting graceful shutdown (SIGINT)." gnostr-relay.log
+        grep "Command timed out after 10 seconds." gnostr-relay.log
+      if: runner.os != 'Windows'
+    - name: Test --logging info --command "gnostr" (Unix)
+      shell: bash
+      run: |
+        ./target/release/detach-rs --log-file gnostr.log --logging info --command "gnostr" --timeout 10
+        grep "Executing command: \"gnostr\"" gnostr.log
         grep "Command timed out after 10 seconds. Attempting graceful shutdown (SIGINT)." gnostr.log
-        grep "Command timed out after 10 seconds." gnostr.log # Info message should be present
+        grep "Command timed out after 10 seconds." gnostr.log
       if: runner.os != 'Windows'
