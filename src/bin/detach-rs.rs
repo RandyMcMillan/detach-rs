@@ -3,29 +3,47 @@
 #[cfg(unix)]
 use clap::{Parser, ValueEnum};
 use libc::{STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, dup2, fork, setsid};
-use log::LevelFilter;
-use log::info;
+use log::{debug, info, LevelFilter, warn, trace};
 use std::fs::File as StdFile; // Rename to avoid conflict with tokio::fs::File
 #[cfg(unix)]
 use std::os::unix::io::AsRawFd;
 use std::path::PathBuf;
 use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, BufReader};
+use chrono::Local;
 
 use detach::Args;
 use detach::daemonize;
 use detach::run_service_async;
+use detach::setup_logging;
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
-    let log_file_path = if args.log_file.is_relative() {
+    // Define the default log file path
+    let default_log_file = PathBuf::from("./detach.log");
+
+    let log_file_path = if args.log_file == default_log_file {
+        // If the default log file is used, append a timestamp
+        let now = Local::now();
+        let timestamp_str = now.format("%Y%m%d-%H%M%S").to_string();
+        let timestamped_filename = format!("detach-{}.log", timestamp_str);
+        std::env::current_dir()?.join(timestamped_filename)
+    } else if args.log_file.is_relative() {
+        // If a custom relative path is provided, resolve it
         std::env::current_dir()?.join(&args.log_file)
     } else {
+        // If an absolute path is provided, use it as-is
         args.log_file.clone()
     };
 
-    let log_level = args.logging.unwrap_or(LevelFilter::Info);
+    //                                     //--logging level here
+    let log_level = args.logging.unwrap_or(log::LevelFilter::Info);
+
+    debug!("debug");
+    info!("info");
+    trace!("trace");
+    warn!("warn");
 
     let mut should_detach = args.detach && !args.no_detach && !args.tail;
 
@@ -41,9 +59,9 @@ fn main() -> anyhow::Result<()> {
     let service_future = run_service_async();
 
     if should_detach {
-        info!("Detaching process... Check logs at {:?}", log_file_path);
+        debug!("Detaching process... Check logs at {:?}", log_file_path);
         // daemonize will now handle tokio runtime, logging, and timeout
-        daemonize(&log_file_path, log_level, args.timeout, service_future)?;
+        daemonize(&log_file_path, log_level, args.timeout, service_future, false)?; // false for to_console
         // daemonize does not return in the child process, it exits.
         // So, this part is only reached by the parent process, which then exits.
         Ok(())
@@ -55,8 +73,9 @@ fn main() -> anyhow::Result<()> {
             .block_on(async {
                 // Logging setup and tailing logic (if args.tail)
                 if args.tail {
-                    env_logger::Builder::new().filter_level(log_level).init();
-                    info!("Tailing log file: {:?}", log_file_path);
+                    // Use setup_logging for file and console output
+                    setup_logging(&log_file_path, log_level, true)?;
+                    debug!("Tailing log file: {:?}", log_file_path);
 
                     // Spawn tailing task
                     let tail_log_file_path = log_file_path.clone();
@@ -80,7 +99,7 @@ fn main() -> anyhow::Result<()> {
                                         if bytes_read == 0 {
                                             sleep(Duration::from_millis(500)).await;
                                         } else {
-                                            info!("{}", buffer);
+                                            debug!("{}", buffer);
                                             offset += bytes_read as u64;
                                         }
                                     }
@@ -94,11 +113,10 @@ fn main() -> anyhow::Result<()> {
                     });
                 } else {
                     // If not detaching and not tailing, just setup simple console logging
-                    env_logger::Builder::new().filter_level(log_level).init();
-                    log::trace!("Trace logging is active in non-detached path.");
+                    setup_logging(&log_file_path, log_level, true)?;
                 }
 
-                info!("Service started. PID: {}", std::process::id());
+                debug!("Service started. PID: {}", std::process::id());
 
                 // Run the async service directly
                 service_future.await?;
