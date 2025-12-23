@@ -56,8 +56,9 @@
 //!
 //! Note: On non-Unix systems, daemonization is not supported, and `--detach` will be ignored.
 use anyhow;
-use std::path::PathBuf;
 use clap::Parser; // Add clap imports
+use std::path::PathBuf;
+use tokio::time::Duration;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "A detached Rust background service")]
@@ -87,9 +88,6 @@ pub struct Args {
     #[arg(long, short, value_name = "LEVEL", value_enum)]
     pub logging: Option<log::LevelFilter>, // Use log::LevelFilter from the log crate
 }
-
-
-use tokio::time::Duration;
 
 #[cfg(unix)]
 use libc::{STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, dup2, fork, setsid};
