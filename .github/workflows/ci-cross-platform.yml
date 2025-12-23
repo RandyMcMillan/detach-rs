@@ -182,6 +182,38 @@ jobs:
         ! test -f detach.log # Ensure default log file is NOT created
       if: runner.os == 'Windows'
 
+    - name: Test --log-file custom relative path (Unix)
+      shell: bash
+      run: |
+        ./target/release/detach-rs --no-detach --log-file custom_log.log --command "echo custom log test"
+        grep "Command executed successfully." custom_log.log
+        test -f custom_log.log # Ensure custom log file is created
+      if: runner.os != 'Windows'
+
+    - name: Test --log-file custom relative path (Windows)
+      shell: bash
+      run: |
+        ./target/release/detach-rs.exe --no-detach --log-file custom_log.log --command "echo custom log test"
+        findstr "Command executed successfully." custom_log.log
+        test -f custom_log.log # Ensure custom log file is created
+      if: runner.os == 'Windows'
+
+    - name: Test --log-file custom absolute path (Unix)
+      shell: bash
+      run: |
+        ./target/release/detach-rs --no-detach --log-file "$(pwd)/custom_absolute.log" --command "echo custom absolute log test"
+        grep "Command executed successfully." "$(pwd)/custom_absolute.log"
+        test -f "$(pwd)/custom_absolute.log" # Ensure custom log file is created
+      if: runner.os != 'Windows'
+
+    - name: Test --log-file custom absolute path (Windows)
+      shell: bash
+      run: |
+        ./target/release/detach-rs.exe --no-detach --log-file "$PWD/custom_absolute.log" --command "echo custom absolute log test"
+        findstr "Command executed successfully." "$PWD/custom_absolute.log"
+        test -f "$PWD/custom_absolute.log" # Ensure custom log file is created
+      if: runner.os == 'Windows'
+
 
 
 
