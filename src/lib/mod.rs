@@ -88,6 +88,10 @@ pub struct Args {
     /// Set the logging level (e.g., "error", "warn", "info", "debug", "trace")
     #[arg(long, short, value_name = "LEVEL", value_enum)]
     pub logging: Option<log::LevelFilter>,
+
+    /// Command to run
+    #[arg(long, value_name = "COMMAND", conflicts_with_all = ["detach", "tail"])]
+    pub command: Option<String>,
 }
 
 #[cfg(unix)]

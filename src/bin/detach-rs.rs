@@ -11,6 +11,7 @@ use std::os::unix::io::AsRawFd;
 use std::path::PathBuf;
 use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, BufReader};
+use std::process::Command; // <-- Add this import
 
 use detach::Args;
 use detach::daemonize;
@@ -40,12 +41,37 @@ fn main() -> anyhow::Result<()> {
     //                                     //--logging level here
     let log_level = args.logging.unwrap_or(log::LevelFilter::Info);
 
+    // --- NEW LOGIC FOR --command FLAG ---
+    if let Some(cmd_str) = args.command {
+        // Setup logging for the command execution
+        setup_logging(&log_file_path, log_level, true)?; // Always log to console for command execution for immediate feedback
+
+        info!("Executing command: \"{}\"", cmd_str);
+
+        let status = Command::new("sh") // Use sh to allow complex commands
+            .arg("-c")
+            .arg(&cmd_str)
+            .status()?; // Execute and wait for status
+
+        if status.success() {
+            info!("Command executed successfully.");
+            std::process::exit(0); // Exit with success
+        } else {
+            // Log the error and exit with the command's exit code
+            let exit_code = status.code().unwrap_or(1);
+            eprintln!("Command failed with exit code: {}", exit_code);
+            std::process::exit(exit_code);
+        }
+    }
+    // --- END NEW LOGIC ---
+
     debug!("debug");
     info!("info");
     trace!("trace");
     warn!("warn");
 
     let mut should_detach = args.detach && !args.no_detach && !args.tail;
+
 
     #[cfg(not(unix))]
     {
