@@ -1,4 +1,4 @@
-detach.log
+*.log
 .gnostr
 .genkit
 /target
