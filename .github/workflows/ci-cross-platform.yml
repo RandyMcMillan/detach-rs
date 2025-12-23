@@ -45,3 +45,16 @@ jobs:
         sleep 12 && true # Give it time to timeout
         grep "Timeout reached" test_tail.log
       if: runner.os != 'Windows'
+
+    - name: Run command-line tests (Tailing with Timeout)
+      shell: bash
+      run: |
+        cargo run -- --help
+
+    - name: Run command-line tests (Tailing with Timeout)
+      shell: bash
+      run: |
+        cargo run -- --tail --log-file test_tail.log --timeout 10
+        sleep 12 && true # Give it time to timeout
+        grep "Timeout reached" test_tail.log
+
