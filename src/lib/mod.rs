@@ -59,6 +59,7 @@ use anyhow;
 use clap::Parser;
 use log::info;
 use std::path::PathBuf;
+use std::process::Command;
 use tokio::time::Duration;
 
 #[derive(Parser, Debug)]
@@ -100,6 +101,45 @@ use libc::{STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, dup2, fork, setsid};
 use std::fs::File as StdFile;
 #[cfg(unix)]
 use std::os::unix::io::AsRawFd;
+
+/// Executes a given command string and exits the process with the command's exit status.
+///
+/// This function sets up logging, executes the command using `sh -c`, and
+/// then terminates the current process, returning the command's exit code.
+///
+/// # Arguments
+/// - `cmd_str`: The command string to be executed (e.g., "ls -la", "echo hello | grep he").
+/// - `log_file_path`: The path to the log file for setting up logging.
+/// - `log_level`: The minimum log level to use for output.
+///
+/// # Returns
+/// This function does not return `Result` in the traditional sense, as it
+/// explicitly calls `std::process::exit()`. It returns `()` for compilation.
+pub fn run_command_and_exit(
+    cmd_str: String,
+    log_file_path: &PathBuf,
+    log_level: log::LevelFilter,
+) -> anyhow::Result<()> {
+    // Setup logging for the command execution (always to console for immediate feedback)
+    setup_logging(log_file_path, log_level, true)?;
+
+    info!("Executing command: \"{}\"", cmd_str);
+
+    let status = Command::new("sh") // Use sh to allow complex commands
+        .arg("-c")
+        .arg(&cmd_str)
+        .status()?; // Execute and wait for status
+
+    if status.success() {
+        info!("Command executed successfully.");
+        std::process::exit(0); // Exit with success
+    } else {
+        // Log the error and exit with the command's exit code
+        let exit_code = status.code().unwrap_or(1);
+        eprintln!("Command failed with exit code: {}", exit_code);
+        std::process::exit(exit_code);
+    }
+}
 
 /// Performs the double-fork routine to completely detach a process from its controlling terminal.
 ///
