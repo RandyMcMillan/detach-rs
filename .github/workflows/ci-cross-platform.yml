@@ -81,3 +81,15 @@ jobs:
         .\target\release\detach-rs.exe --no-detach --log-file test_timeout.log --timeout 5
         findstr "Timeout reached" test_timeout.log
       if: runner.os == 'Windows'
+
+    - name: Run command with Timeout (Unix-like)
+      run: |
+        ./target/release/detach-rs --command "sleep 5" --timeout 2 --log-file test_command_timeout_unix.log
+        grep "Command timed out" test_command_timeout_unix.log
+      if: runner.os != 'Windows'
+
+    - name: Run command with Timeout (Windows)
+      run: |
+        .\target\release\detach-rs.exe --command "timeout /T 5 /NOBREAK >nul" --timeout 2 --log-file test_command_timeout_windows.log
+        findstr "Command timed out" test_command_timeout_windows.log
+      if: runner.os == 'Windows'
