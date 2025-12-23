@@ -6,7 +6,7 @@ use tokio::time::{timeout, Duration as TokioDuration};
 #[cfg(unix)]
 use libc::{kill, SIGINT};
 
-use tracing_subscriber::{self, prelude::*, fmt::writer::MakeWriterExt};
+use tracing_subscriber::{self, prelude::*, fmt::writer::MakeWriterExt, filter::{EnvFilter, LevelFilter}};
 
 use tracing_log::LogTracer; // Add LogTracer here for clarity
 
@@ -23,27 +23,42 @@ pub fn setup_tracing_logging(
     let file = std::fs::File::create(path)?;
     let file_appender = tracing_subscriber::fmt::layer()
         .with_ansi(false)
-        .with_writer(file.with_max_level(converted_tracing_level));
+        .with_writer(file);
+
+    let filter = tracing_subscriber::filter::EnvFilter::builder()
+        .with_default_directive(tracing_subscriber::filter::LevelFilter::from_level(converted_tracing_level).into())
+        .from_env_lossy(); // Removed .build()?
 
     // Initialize the registry based on to_console
-    if to_console {
+    let init_result = if to_console {
         let console_appender = tracing_subscriber::fmt::layer()
             .with_ansi(true)
             .with_writer(std::io::stdout.with_max_level(converted_tracing_level));
         tracing_subscriber::registry()
             .with(file_appender)
             .with(console_appender)
-            .init();
+            .with(filter) // Add the filter here
+            .try_init() // Use try_init()
     } else {
         tracing_subscriber::registry()
             .with(file_appender)
-            .init();
+            .with(filter) // Add the filter here
+            .try_init() // Use try_init()
+    };
+
+    if let Err(e) = init_result {
+        eprintln!("Warning: Failed to initialize tracing subscriber: {}", e);
+        // Do not return early, as LogTracer might still need to be set up or another logger is active
     }
 
     // Route log messages through tracing
-    LogTracer::builder() // Use LogTracer directly
-        .with_max_level(level) // This still takes log::LevelFilter
-        .init()?;
+    let log_tracer_init_result = LogTracer::builder()
+        .with_max_level(level)
+        .init(); // Reverted to init()
+
+    if let Err(e) = log_tracer_init_result {
+        eprintln!("Warning: Failed to initialize LogTracer: {}", e);
+    }
 
     Ok(())
 }
@@ -225,6 +240,8 @@ where
         dup2(fd, STDERR_FILENO);
         // Re-initialize logging in the daemonized child process
         setup_tracing_logging(log_path, level, false)?; // Use passed level
+
+        tracing::info!("Tracing logging initialized successfully in daemonized process."); // Add this line
 
         // Temporary direct write for debugging
         use std::io::Write;
