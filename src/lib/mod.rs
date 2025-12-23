@@ -5,6 +5,7 @@ use log::{info, warn};
 use std::path::PathBuf;
 use tokio::process::Command;
 use tokio::time::{timeout, Duration as TokioDuration};
+#[cfg(unix)]
 use libc::{kill, SIGINT};
 
 
@@ -74,9 +75,20 @@ pub async fn run_command_and_exit(
                     "Command timed out after {} seconds. Attempting graceful shutdown (SIGINT).",
                     seconds
                 );
-                let pid = command.id().expect("Failed to get child process ID");
-                unsafe {
-                    kill(pid as i32, SIGINT);
+                #[cfg(unix)]
+                {
+                    let pid = command.id().expect("Failed to get child process ID");
+                    unsafe {
+                        kill(pid as i32, SIGINT);
+                    }
+                }
+                #[cfg(not(unix))] // For non-Unix, we can't send SIGINT directly.
+                {
+                    // On Windows, there isn't a direct equivalent to SIGINT for graceful shutdown
+                    // through the standard library process API. The `command.kill()` will send a
+                    // more forceful termination signal. For now, we'll just log and proceed to the
+                    // hard kill if the process doesn't exit after the sleep.
+                    warn!("Cannot send SIGINT equivalent on non-Unix platforms. Proceeding to hard kill if necessary.");
                 }
 
 
