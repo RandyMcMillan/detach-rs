@@ -270,7 +270,11 @@ where
 }
 
 #[cfg(unix)]
-pub fn setup_logging(path: &PathBuf, level: log::LevelFilter, to_console: bool) -> Result<(), anyhow::Error> {
+pub fn setup_logging(
+    path: &PathBuf,
+    level: log::LevelFilter,
+    to_console: bool,
+) -> Result<(), anyhow::Error> {
     use log4rs::append::console::ConsoleAppender;
     use log4rs::append::file::FileAppender;
     use log4rs::config::{Appender, Config, Root};
@@ -283,19 +287,20 @@ pub fn setup_logging(path: &PathBuf, level: log::LevelFilter, to_console: bool) 
     let mut config_builder = Config::builder();
     let mut root_builder = Root::builder();
 
-    config_builder = config_builder.appender(Appender::builder().build("logfile", Box::new(logfile)));
+    config_builder =
+        config_builder.appender(Appender::builder().build("logfile", Box::new(logfile)));
     root_builder = root_builder.appender("logfile");
 
     if to_console {
         let stdout = ConsoleAppender::builder()
             .encoder(Box::new(PatternEncoder::new("{d} - {l} - {m}\n")))
             .build();
-        config_builder = config_builder.appender(Appender::builder().build("stdout", Box::new(stdout)));
+        config_builder =
+            config_builder.appender(Appender::builder().build("stdout", Box::new(stdout)));
         root_builder = root_builder.appender("stdout");
     }
 
-    let config = config_builder
-        .build(root_builder.build(level))?;
+    let config = config_builder.build(root_builder.build(level))?;
 
     log4rs::init_config(config)?;
     Ok(())
@@ -303,9 +308,14 @@ pub fn setup_logging(path: &PathBuf, level: log::LevelFilter, to_console: bool) 
 
 #[cfg(not(unix))]
 
-pub fn setup_logging(_path: &PathBuf, _level: log::LevelFilter, _to_console: bool) -> Result<(), anyhow::Error> {
-
-    eprintln!("File logging with log4rs is not supported on this operating system when daemonizing.");
+pub fn setup_logging(
+    _path: &PathBuf,
+    _level: log::LevelFilter,
+    _to_console: bool,
+) -> Result<(), anyhow::Error> {
+    eprintln!(
+        "File logging with log4rs is not supported on this operating system when daemonizing."
+    );
     // For non-unix, if daemonize is called (which it won't be if cfg(not(unix)))
     // then we would rely on main to setup a console logger if not tailing.
     Ok(())
