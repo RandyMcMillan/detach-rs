@@ -274,6 +274,12 @@ jobs:
         findstr "Command timed out after 2 seconds." test_logging_warn.log # Info message should be present
       if: runner.os == 'Windows'
 
+    - name: Test --detach (Windows - Daemonization not supported)
+      shell: bash
+      run: |
+        ./target/release/detach-rs.exe --detach 2>&1 | findstr "Daemonization is not supported on this operating system."
+      if: runner.os == 'Windows'
+
 
 
 
