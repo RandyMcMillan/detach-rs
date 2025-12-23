@@ -32,14 +32,18 @@ jobs:
 
     - name: Run command-line tests (Non-daemonizing)
       run: |
-        ./target/release/detach-rs --no-detach --log-file test_no_detach.log
+        ./target/release/detach-rs --no-detach --log-file test_no_detach.log --timeout 5 && \
+        sleep 7 # Give it time to timeout
         grep "Service heartbeat" test_no_detach.log
+        grep "Timeout reached" test_no_detach.log
       if: runner.os != 'Windows'
 
     - name: Run command-line tests (Non-daemonizing)
       run: |
-        .\target\release\detach-rs.exe --no-detach --log-file test_no_detach.log
+        .\target\release\detach-rs.exe --no-detach --log-file test_no_detach.log --timeout 5 && \
+        timeout /T 7 /NOBREAK >nul # Give it time to timeout
         findstr "Service heartbeat" test_no_detach.log
+        findstr "Timeout reached" test_no_detach.log
       if: runner.os == 'Windows'
 
     - name: Run command-line tests (Tailing with Timeout)
@@ -58,7 +62,7 @@ jobs:
 
     - name: Test daemonization with Timeout (Unix-like)
       run: |
-        ./target/release/detach-rs --log-file test_daemonize.log --timeout 10 & # Run daemonized with timeout
+        ./target/release/detach-rs --log-file test_daemonize.log --timeout 10 --detach & # Run daemonized with timeout
         sleep 12 # Give the daemonized process time to start, timeout, and write to log
         grep "Timeout reached" test_daemonize.log
       if: runner.os != 'Windows'
@@ -67,7 +71,7 @@ jobs:
       run: |
         # Default run on Windows should print "Daemonization is not supported"
         # We redirect stderr to stdout to capture it
-        .\target\release\detach-rs.exe 2>&1 | findstr "Daemonization is not supported"
+        .\target\release\detach-rs.exe --timeout 5 2>&1 | findstr "TODO: Daemonization is not supported"
       if: runner.os == 'Windows'
 
     - name: Run command-line tests (Timeout - Non-daemonizing)
@@ -80,4 +84,16 @@ jobs:
       run: |
         .\target\release\detach-rs.exe --no-detach --log-file test_timeout.log --timeout 5
         findstr "Timeout reached" test_timeout.log
+      if: runner.os == 'Windows'
+
+    - name: Run command with Timeout (Unix-like)
+      run: |
+        ./target/release/detach-rs --command "sleep 5" --timeout 2 --log-file test_command_timeout_unix.log
+        grep "Command timed out" test_command_timeout_unix.log
+      if: runner.os != 'Windows'
+
+    - name: Run command with Timeout (Windows)
+      run: |
+        .\target\release\detach-rs.exe --command "timeout /T 5 /NOBREAK >nul" --timeout 2 --log-file test_command_timeout_windows.log
+        findstr "Command timed out" test_command_timeout_windows.log
       if: runner.os == 'Windows'
