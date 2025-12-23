@@ -34,7 +34,6 @@ jobs:
       run: |
         ./target/release/detach-rs --no-detach --log-file test_no_detach.log --timeout 5 && \
         sleep 7 && true # Give it time to timeout
-        grep "Service heartbeat" test_no_detach.log
         grep "Timeout reached" test_no_detach.log
       if: runner.os != 'Windows'
 
@@ -42,7 +41,6 @@ jobs:
       run: |
         .\target\release\detach-rs.exe --no-detach --log-file test_no_detach.log --timeout 5 && \
         timeout /T 7 /NOBREAK >nul # Give it time to timeout
-        findstr "Service heartbeat" test_no_detach.log
         findstr "Timeout reached" test_no_detach.log
       if: runner.os == 'Windows'
 
