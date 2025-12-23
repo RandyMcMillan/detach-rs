@@ -57,10 +57,14 @@
 //! Note: On non-Unix systems, daemonization is not supported, and `--detach` will be ignored.
 use anyhow;
 use clap::Parser;
-use log::{info, warn}; // Added warn for timeout message
+use log::{info, warn};
 use std::path::PathBuf;
 use tokio::process::Command;
 use tokio::time::{timeout, Duration as TokioDuration};
+use crossterm::terminal::{enable_raw_mode, disable_raw_mode, is_raw_mode_enabled}; // Add crossterm imports
+use scopeguard::defer; // Add scopeguard import
+use atty; // Add atty import
+
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "A detached Rust background service")]
@@ -121,9 +125,6 @@ pub async fn run_command_and_exit(
     log_level: log::LevelFilter,
     timeout_seconds: Option<u64>,
 ) -> anyhow::Result<()> {
-    // Setup logging for the command execution (always to console for immediate feedback)
-    setup_logging(log_file_path, log_level, true)?;
-
     info!("Executing command: \"{}\"", cmd_str);
 
     let mut command = Command::new("sh") // Use sh to allow complex commands
