@@ -1,60 +1,4 @@
-//! This crate provides utilities for daemonizing Rust processes.
-//!
-//! # How to use `detach-rs` (the binary)
-//!
-//! The `detach-rs` binary (located at `src/bin/detach-rs.rs`) is a detached Rust background service
-//! that can be controlled via command-line arguments.
-//!
-//! ## Command-Line Arguments:
-//!
-//! *   **`--detach`**:
-//!     Run the process in the background. This is the default behavior.
-//!
-//! *   **`--no-detach`**:
-//!     Run the process in the foreground, disabling daemonization.
-//!
-//! *   **`--tail`**:
-//!     Enables log tailing. When used, the service will run in the foreground and
-//!     output its logs directly to the console while also writing them to the log file.
-//!
-//! *   **`--log-file <PATH>`**:
-//!     Specifies the path to the log file. Defaults to `./detach.log`.
-//!     Example: `--log-file /var/log/my_service.log`
-//!
-//! *   **`-t, --timeout <SECONDS>`**:
-//!     Sets a timeout (in seconds) after which the service will automatically terminate.
-//!     This applies to both detached and non-detached modes.
-//!     Example: `--timeout 60` (service will run for 60 seconds)
-//!
-//! *   **`-l, --logging <LEVEL>`**:
-//!     Sets the logging level for the service.
-//!     Supported levels: `error`, `warn`, `info`, `debug`, `trace`.
-//!     Defaults to `info`.
-//!     Example: `--logging debug`
-//!
-//! ## Examples:
-//!
-//! *   **Run in background with default settings:**
-//!     ```bash
-//!     ./target/release/detach-rs
-//!     ```
-//!
-//! *   **Run in foreground with debug logging:**
-//!     ```bash
-//!     ./target/release/detach-rs --no-detach --logging debug
-//!     ```
-//!
-//! *   **Run in background, log to a specific file, and terminate after 5 minutes:**
-//!     ```bash
-//!     ./target/release/detach-rs --log-file /tmp/my_daemon.log --timeout 300
-//!     ```
-//!
-//! *   **Tail logs of a foreground service:**
-//!     ```bash
-//!     ./target/release/detach-rs --no-detach --tail
-//!     ```
-//!
-//! Note: On non-Unix systems, daemonization is not supported, and `--detach` will be ignored.
+
 use anyhow;
 use clap::Parser;
 use log::{info, warn};
@@ -67,32 +11,32 @@ use libc::{kill, SIGINT};
 #[derive(Parser, Debug)]
 #[command(author, version, about = "A detached Rust background service")]
 pub struct Args {
-    /// Run the process in the background
+
     #[arg(long, default_value_t = false)]
     pub detach: bool,
 
-    /// Run the process in the foreground (disable detachment)
+
     #[arg(long = "no-detach")]
     pub no_detach: bool,
 
-    /// tail logging
+
     #[arg(long, default_value_t = false, conflicts_with = "detach")]
     pub tail: bool,
 
-    /// Path to the log file
-    //TODO handle canonical relative path
+
+
     #[arg(long, default_value = "./detach.log")]
     pub log_file: PathBuf,
 
-    /// Timeout after a specified number of seconds
+
     #[arg(long, short, value_name = "SECONDS")]
     pub timeout: Option<u64>,
 
-    /// Set the logging level (e.g., "error", "warn", "info", "debug", "trace")
+
     #[arg(long, short, value_name = "LEVEL", value_enum)]
     pub logging: Option<log::LevelFilter>,
 
-    /// Command to run
+
     #[arg(long, value_name = "COMMAND", conflicts_with_all = ["detach", "tail"])]
     pub command: Option<String>,
 }
@@ -104,40 +48,28 @@ use std::fs::File as StdFile;
 #[cfg(unix)]
 use std::os::unix::io::AsRawFd;
 
-/// Executes a given command string and exits the process with the command's exit status.
-///
-/// This function sets up logging, executes the command using `sh -c`, and
-/// then terminates the current process, returning the command's exit code.
-///
-/// # Arguments
-/// - `cmd_str`: The command string to be executed (e.g., "ls -la", "echo hello | grep he").
-/// - `log_file_path`: The path to the log file for setting up logging.
-/// - `log_level`: The minimum log level to use for output.
-///
-/// # Returns
-/// This function does not return `Result` in the traditional sense, as it
-/// explicitly calls `std::process::exit()`. It returns `()` for compilation.
+
 pub async fn run_command_and_exit(
     cmd_str: String,
-    _log_file_path: &PathBuf, // Marked as unused
-    _log_level: log::LevelFilter, // Marked as unused
+    _log_file_path: &PathBuf,
+    _log_level: log::LevelFilter,
     timeout_seconds: Option<u64>,
 ) -> anyhow::Result<()> {
     info!("Executing command: \"{}\"", cmd_str);
 
 
 
-    let mut command = Command::new("sh") // Use sh to allow complex commands
+    let mut command = Command::new("sh")
         .arg("-c")
         .arg(&cmd_str)
-        .spawn()?; // Use spawn instead of status directly
+        .spawn()?;
 
     let status_result = if let Some(seconds) = timeout_seconds {
         info!("Command will timeout after {} seconds.", seconds);
         match timeout(TokioDuration::from_secs(seconds), command.wait()).await {
-            Ok(Ok(status)) => Ok(status), // Command completed within timeout
-            Ok(Err(e)) => Err(anyhow::anyhow!("Failed to wait for command: {}", e)), // Error waiting for command
-                        Err(_elapsed) => { // Timeout occurred
+            Ok(Ok(status)) => Ok(status),
+            Ok(Err(e)) => Err(anyhow::anyhow!("Failed to wait for command: {}", e)),
+                        Err(_elapsed) => {
                 warn!(
                     "Command timed out after {} seconds. Attempting graceful shutdown (SIGINT).",
                     seconds
@@ -147,16 +79,16 @@ pub async fn run_command_and_exit(
                     kill(pid as i32, SIGINT);
                 }
 
-                // Give the process a short grace period to shut down gracefully
+
                 tokio::time::sleep(TokioDuration::from_millis(2000)).await;
 
-                // Check if the command is still running
+
                 if command.try_wait()?.is_none() {
                     warn!("Process did not exit after SIGINT. Sending SIGKILL.");
-                    command.kill().await?; // Force kill
+                    command.kill().await?;
                 }
                 command.wait().await?;
-                info!("Command timed out after {} seconds.", seconds); // not and error
+                info!("Command timed out after {} seconds.", seconds);
                 return Ok(());
             }
         }
@@ -183,76 +115,7 @@ pub async fn run_command_and_exit(
         }
 }
 
-/// Performs the double-fork routine to completely detach a process from its controlling terminal.
-///
-/// This function is specifically designed for Unix-like operating systems (`cfg(unix)`).
-/// On non-Unix systems, it will print an error message and return immediately without performing
-/// any daemonization.
-///
-/// The daemonization process involves a "double-fork" technique to ensure that the process
-/// fully detaches from the controlling terminal, cannot reacquire one, and is not terminated
-/// when the parent shell exits.
-///
-/// # Stages of Daemonization:
-///
-/// 1.  **First Fork**: The parent process forks, and the original parent immediately exits.
-///     This ensures that the child process is not a process group leader and is adopted by `init` (PID 1).
-///
-/// 2.  **Create New Session (`setsid`)**: The child process creates a new session and becomes the
-///     session leader. This detaches it from its controlling terminal.
-///
-/// 3.  **Second Fork**: The session leader forks again, and the session leader (first child) exits.
-///     This ensures that the new child process is no longer a session leader, preventing it from
-///     reacquiring a controlling terminal.
-///
-/// 4.  **Change Working Directory**: The process changes its current working directory to the root (`/`).
-///     This is done to avoid keeping any mount points busy, which could prevent unmounting.
-///
-/// 5.  **Redirect Standard I/O**: Standard input, output, and error streams (`stdin`, `stdout`, `stderr`)
-///     are redirected to `/dev/null`. This prevents the daemon from attempting to read from or
-///     write to a terminal that no longer exists, and ensures it runs silently in the background.
-///
-/// # Asynchronous Execution and Timeout Management:
-///
-/// After successful daemonization, this function initializes a `tokio` multi-threaded runtime
-/// within the child process. It then executes the provided `service_future` within this runtime.
-///
-/// -   **Logging**: Logging is set up to write to the specified `log_path` with the given `level`.
-/// -   **Timeout**: If a `timeout` duration is provided, the function will use `tokio::select!`
-///     to concurrently await either the completion of the `service_future` or the expiration of
-///     the timeout. The process will terminate when the first of these events occurs.
-/// -   **Process Termination**: The daemon process will explicitly call `std::process::exit(0)`
-///     upon successful completion of the `service_future` or when the timeout is reached.
-///
-/// # Parameters:
-///
-/// -   `log_path`: A `PathBuf` indicating the file where the daemon's logs should be written.
-/// -   `level`: A `log::LevelFilter` specifying the minimum level of log messages to record.
-/// -   `timeout`: An `Option<u64>` representing the maximum duration (in seconds) the daemon
-///     should run. If `Some(seconds)`, the daemon will terminate after `seconds`. If `None`,
-///     it will run until the `service_future` completes.
-/// -   `service_future`: An asynchronous future (`F`) that represents the main logic of the
-///     daemon service. This future must implement `Future<Output = Result<(), anyhow::Error>> + Send + 'static`.
-///     The daemon will execute this future and terminate upon its completion or timeout.
-///
-/// # Returns:
-///
-/// -   `Ok(())`: This function only returns `Ok(())` in the *original parent process* after the
-///     first fork. The child process (daemon) does not return from this function; instead, it
-///     executes the `service_future` and eventually calls `std::process::exit(0)`.
-/// -   `Err(anyhow::Error)`: If any step of the daemonization process (forking, `setsid`, I/O redirection)
-///     fails, an error is returned.
-///
-/// # Panics:
-///
-/// -   This function will panic if the `tokio` runtime cannot be built (e.g., due to system resource
-///     limitations), or if the `service_future` itself panics.
-/// -   If `service_future` returns an `Err`, `expect` will cause a panic.
-///
-/// # Safety:
-///
-/// This function uses `unsafe` blocks for `fork`, `setsid`, and `dup2` calls, which are POSIX
-/// system calls. Care has been taken to ensure their correct usage for daemonization.
+
 #[cfg(unix)]
 pub fn daemonize<F>(
     _log_path: &PathBuf, // Marked as unused
