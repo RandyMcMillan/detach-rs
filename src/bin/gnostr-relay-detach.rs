@@ -26,9 +26,7 @@ use tracing::{info, debug, trace, warn}; // Added direct tracing macros
 #[actix_web::main]
 async fn stat_relay() -> Result<()> {
     let args = Args::parse();
-    let filter = EnvFilter::new(args.logging.map(|l| l.as_str()).unwrap_or("info"));
-    fmt().with_env_filter(filter).init();
-    info!("Start relay server");
+    tracing::info!("Start relay server"); // Changed to tracing::info!
 
     let local_set = tokio::task::LocalSet::new();
 
@@ -45,7 +43,7 @@ async fn stat_relay() -> Result<()> {
         })
         .await?;
 
-    info!("Relay server shutdown");
+    tracing::info!("Relay server shutdown"); // Changed to tracing::info!
     Ok(())
 }
 
