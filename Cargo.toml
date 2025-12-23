@@ -25,12 +25,11 @@ env_logger = "0.11.8"
 expectrl = "0.8.0"
 gnostr-relay = "1908.924232.84720"
 libc = { version = "=0.2.177", features = ["std"] }
-log = "^0.4"
-log4rs = { version = "^1.4", features = ["toml", "console_appender", "file_appender"] }
+log = "^0.4.21" # Updated log dependency
 tokio = { version = "1.48.0", features = ["time", "macros", "rt-multi-thread", "fs", "io-util", "process"] }
-tracing = { version = "0.1.40" }
-tracing-core = "0.1.30"
+tracing = {version = "0.1.40"}
+tracing-subscriber = {version = "0.3.18", features = ["env-filter"]}
 tracing-log = "0.2.0"
-tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+tracing-core = "0.1.30"
 
 

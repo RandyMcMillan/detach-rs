@@ -1,6 +1,77 @@
 use anyhow;
 use clap::Parser;
-use log::{info, warn};
+use tracing::{info, warn, debug, trace}; // Replaced log imports
+
+// New tracing imports
+use tracing_subscriber::{self, prelude::*, fmt::writer::MakeWriterExt, filter::{EnvFilter, LevelFilter}};
+use tracing_log::LogTracer;
+use tracing_core::Level as TracingCoreLevel; // Or just use tracing::Level if it compiles
+
+
+// A wrapper for initializing tracing-subscriber (Robust version)
+pub fn setup_tracing_logging(
+    path: &PathBuf,
+    level: log::LevelFilter,
+    to_console: bool,
+) -> anyhow::Result<()> {
+    // Convert log::LevelFilter to log::Level, then to tracing::Level
+    let converted_log_level = level.to_level().unwrap_or(log::Level::Info);
+    let converted_tracing_level = map_log_level_to_tracing_level(converted_log_level);
+
+    let file = std::fs::File::create(path)?;
+    let file_appender = tracing_subscriber::fmt::layer()
+        .with_ansi(false)
+        .with_writer(file);
+
+    let filter = tracing_subscriber::filter::EnvFilter::builder()
+        .with_default_directive(tracing_subscriber::filter::LevelFilter::from_level(converted_tracing_level).into())
+        .from_env_lossy(); // Removed .build()?
+
+
+    // Initialize the registry based on to_console
+    let init_result = if to_console {
+        let console_appender = tracing_subscriber::fmt::layer()
+            .with_ansi(true)
+            .with_writer(std::io::stdout.with_max_level(converted_tracing_level));
+        tracing_subscriber::registry()
+            .with(file_appender)
+            .with(console_appender)
+            .with(filter) // Add the filter here
+            .try_init() // Use try_init()
+    } else {
+        tracing_subscriber::registry()
+            .with(file_appender)
+            .with(filter) // Add the filter here
+            .try_init() // Use try_init()
+    };
+
+    if let Err(e) = init_result {
+        eprintln!("Warning: Failed to initialize tracing subscriber: {}", e);
+        // Do not return early, as LogTracer might still need to be set up or another logger is active
+    }
+
+    // Route log messages through tracing
+    let log_tracer_init_result = LogTracer::builder()
+        .with_max_level(level)
+        .init();
+
+    if let Err(e) = log_tracer_init_result {
+        eprintln!("Warning: Failed to initialize LogTracer: {}", e);
+    }
+
+    Ok(())
+}
+
+// Helper function to map log::Level to tracing::Level
+fn map_log_level_to_tracing_level(level: log::Level) -> tracing::Level { // Explicitly use tracing::Level here
+    match level {
+        log::Level::Error => tracing::Level::ERROR,
+        log::Level::Warn => tracing::Level::WARN,
+        log::Level::Info => tracing::Level::INFO,
+        log::Level::Debug => tracing::Level::DEBUG,
+        log::Level::Trace => tracing::Level::TRACE,
+    }
+}
 use std::path::PathBuf;
 use tokio::process::Command;
 use tokio::time::{timeout, Duration as TokioDuration};
@@ -53,7 +124,7 @@ pub async fn run_command_and_exit(
     _log_level: log::LevelFilter,
     timeout_seconds: Option<u64>,
 ) -> anyhow::Result<()> {
-    info!("Executing command: \"{}\"", cmd_str);
+    tracing::info!("Executing command: \"{}\"", cmd_str);
 
 
 
@@ -63,15 +134,12 @@ pub async fn run_command_and_exit(
         .spawn()?;
 
     let status_result = if let Some(seconds) = timeout_seconds {
-        info!("Command will timeout after {} seconds.", seconds);
+        tracing::info!("Command will timeout after {} seconds.", seconds);
         match timeout(TokioDuration::from_secs(seconds), command.wait()).await {
             Ok(Ok(status)) => Ok(status),
             Ok(Err(e)) => Err(anyhow::anyhow!("Failed to wait for command: {}", e)),
                         Err(_elapsed) => {
-                warn!(
-                    "Command timed out after {} seconds. Attempting graceful shutdown (SIGINT).",
-                    seconds
-                );
+                tracing::warn!("Command timed out after {} seconds. Attempting graceful shutdown (SIGINT).", seconds);
                 #[cfg(unix)]
                 {
                     let pid = command.id().expect("Failed to get child process ID");
@@ -85,7 +153,7 @@ pub async fn run_command_and_exit(
                     // through the standard library process API. The `command.kill()` will send a
                     // more forceful termination signal. For now, we'll just log and proceed to the
                     // hard kill if the process doesn't exit after the sleep.
-                    warn!("Cannot send SIGINT equivalent on non-Unix platforms. Proceeding to hard kill if necessary.");
+                    tracing::warn!("Cannot send SIGINT equivalent on non-Unix platforms. Proceeding to hard kill if necessary.");
                 }
 
 
@@ -93,11 +161,11 @@ pub async fn run_command_and_exit(
 
 
                 if command.try_wait()?.is_none() {
-                    warn!("Process did not exit after SIGINT. Sending SIGKILL.");
+                    tracing::warn!("Process did not exit after SIGINT. Sending SIGKILL.");
                     command.kill().await?;
                 }
                 command.wait().await?;
-                info!("Command timed out after {} seconds.", seconds);
+                tracing::info!("Command timed out after {} seconds.", seconds);
                 return Ok(());
             }
         }
@@ -111,7 +179,7 @@ pub async fn run_command_and_exit(
 
         if status_result_unwrapped.success() {
 
-            info!("Command executed successfully.");
+            tracing::info!("Command executed successfully.");
 
             Ok(())
 
@@ -169,7 +237,14 @@ where
         dup2(fd, STDOUT_FILENO);
         dup2(fd, STDERR_FILENO);
         // Re-initialize logging in the daemonized child process
-        setup_logging(log_path, level, false)?;
+        setup_tracing_logging(log_path, level, false)?; // Use passed level
+
+        // Temporary direct write for debugging
+        use std::io::Write;
+        if let Ok(mut file) = std::fs::OpenOptions::new().append(true).open(log_path) {
+            writeln!(file, "DEBUG: Direct write from daemonize after logging setup.").expect("Failed to write debug message directly.");
+            file.flush().expect("Failed to flush log file after direct write."); // Add flush
+        }
     }
 
     // IMPORTANT: Re-initialize tokio runtime AFTER daemonization
@@ -180,30 +255,41 @@ where
         .unwrap();
 
     rt.block_on(async {
-        use log::{debug, info, trace, warn};
+
+
         use tokio::time::sleep;
 
 
-        debug!("Daemon process started. PID: {}", std::process::id());
-        trace!("Daemon process started. PID: {}", std::process::id());
-        warn!("Daemon process started. PID: {}", std::process::id());
+        tracing::debug!("Daemon process started. PID: {}", std::process::id());
+        tracing::trace!("Daemon process started. PID: {}", std::process::id());
+        tracing::warn!("Daemon process started. PID: {}", std::process::id());
 
         if let Some(timeout_seconds) = timeout {
-            debug!("Setting timeout for {} seconds.", timeout_seconds);
+            tracing::trace!("Before tokio::select! in daemonize. Timeout: {}s", timeout_seconds);
             tokio::select! {
                 _ = service_future => {
-                    debug!("Service future finished before timeout.");
+                    tracing::debug!("Service future finished before timeout.");
+                    tracing::debug!("Setting timeout for {} seconds.", timeout_seconds);
                 }
-                _ = sleep(TokioDuration::from_secs(timeout_seconds)) => { // Use TokioDuration here
-                    info!("Timeout reached after {} seconds. Terminating service.", timeout_seconds);
+                _ = sleep(TokioDuration::from_secs(timeout_seconds)) => {
+                    tracing::trace!("Timeout branch taken in daemonize.");
+                    // Attempt to log with tracing, but also ensure direct write
+                    tracing::info!("Timeout reached after {} seconds. Terminating service.", timeout_seconds);
+                    // Direct write as a fallback to ensure the message is in the log file
+                    use std::io::Write;
+                    if let Ok(mut file) = std::fs::OpenOptions::new().append(true).open(log_path) {
+                        writeln!(file, "Timeout reached after {} seconds. Terminating service.", timeout_seconds).expect("Failed to write timeout message directly.");
+                        file.flush().expect("Failed to flush log file after direct write."); // Add flush
+                    }
                 }
             }
+            tracing::trace!("After tokio::select! in daemonize.");
         } else {
-            service_future.await.expect("Service future failed"); // Unwraps Result, will panic on error
+            service_future.await.expect("Service future failed");
         }
 
-        info!("Daemon process shutting down.");
-        tokio::time::sleep(TokioDuration::from_millis(100)).await;
+        tracing::info!("Daemon process shutting down.");
+        tokio::time::sleep(TokioDuration::from_secs(1)).await;
         std::process::exit(0);
     });
     // This part is unreachable as std::process::exit(0) is called above.
@@ -225,79 +311,7 @@ where
     Ok(()) // Or return an error if you want to explicitly signal failure
 }
 
-#[cfg(unix)]
-pub fn setup_logging(
-    path: &PathBuf,
-    level: log::LevelFilter,
-    to_console: bool,
-) -> Result<(), anyhow::Error> {
-    use log4rs::append::console::ConsoleAppender;
-    use log4rs::append::file::FileAppender;
-    use log4rs::config::{Appender, Config, Root};
-    use log4rs::encode::pattern::PatternEncoder;
 
-    let logfile = FileAppender::builder()
-        .encoder(Box::new(PatternEncoder::new("{d} - {l} - {m}\n")))
-        .build(path)?;
-
-    let mut config_builder = Config::builder();
-    let mut root_builder = Root::builder();
-
-    config_builder =
-        config_builder.appender(Appender::builder().build("logfile", Box::new(logfile)));
-    root_builder = root_builder.appender("logfile");
-
-    if to_console {
-        let stdout = ConsoleAppender::builder()
-            .encoder(Box::new(PatternEncoder::new("{d} - {l} - {m}\n")))
-            .build();
-        config_builder =
-            config_builder.appender(Appender::builder().build("stdout", Box::new(stdout)));
-        root_builder = root_builder.appender("stdout");
-    }
-
-    let config = config_builder.build(root_builder.build(level))?;
-
-    log4rs::init_config(config)?;
-    Ok(())
-}
-
-#[cfg(not(unix))]
-pub fn setup_logging(
-    path: &PathBuf,
-    level: log::LevelFilter,
-    to_console: bool,
-) -> Result<(), anyhow::Error> {
-    use log4rs::append::console::ConsoleAppender;
-    use log4rs::append::file::FileAppender;
-    use log4rs::config::{Appender, Config, Root};
-    use log4rs::encode::pattern::PatternEncoder;
-
-    let mut config_builder = Config::builder();
-    let mut root_builder = Root::builder();
-
-    // Always configure file appender if a path is provided
-    let logfile = FileAppender::builder()
-        .encoder(Box::new(PatternEncoder::new("{d} - {l} - {m}\n")))
-        .build(path)?;
-
-    config_builder = config_builder.appender(Appender::builder().build("logfile", Box::new(logfile)));
-    root_builder = root_builder.appender("logfile");
-
-    if to_console {
-        // Only configure console appender if explicitly requested
-        let stdout = ConsoleAppender::builder()
-            .encoder(Box::new(PatternEncoder::new("{d} - {l} - {m}\n")))
-            .build();
-        config_builder = config_builder.appender(Appender::builder().build("stdout", Box::new(stdout)));
-        root_builder = root_builder.appender("stdout");
-    }
-
-    let config = config_builder.build(root_builder.build(level))?;
-
-    log4rs::init_config(config)?;
-    Ok(())
-}
 
 /// A default asynchronous service future that simulates a background task with heartbeats.
 ///
@@ -310,7 +324,7 @@ pub fn setup_logging(
 /// - `Ok(())`: If the service completes its simulated task.
 /// - `Err(anyhow::Error)`: If an error occurs during its execution.
 pub async fn run_service_async() -> anyhow::Result<()> {
-    use log::debug;
+
     use std::env; // Import std::env
     let mut count = 0;
     let max_heartbeats = env::var("DETACH_TEST_HEARTBEATS")
@@ -319,15 +333,15 @@ pub async fn run_service_async() -> anyhow::Result<()> {
         .unwrap_or(100); // Default to 100 if env var not set or invalid
 
     loop {
-        debug!("Service heartbeat #{}", count);
+        tracing::debug!("Service heartbeat #{}", count);
         tokio::time::sleep(TokioDuration::from_secs(10)).await;
         count += 1;
 
         if count >= max_heartbeats { // Changed to >= for clarity, though > 100 also works
             break;
         }
-        debug!("count: {}", count);
+        tracing::debug!("count: {}", count);
     }
-    info!("Service shutting down.");
+    tracing::info!("Service shutting down.");
     Ok(())
 }
