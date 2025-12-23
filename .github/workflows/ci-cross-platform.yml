@@ -66,6 +66,13 @@ jobs:
       run: |
         cargo run -- -V | grep "detach 0.0.1"
 
+    - name: Test daemonization with Timeout (Unix-like)
+      run: |
+        ./target/release/detach-rs --log-file test_daemonize.log --timeout 10 --detach & # Run daemonized with timeout
+        sleep 12 && true # Give the daemonized process time to start, timeout, and write to log
+        grep "Timeout reached" test_daemonize.log
+      if: runner.os != 'Windows'
+
     - name: Run command-line tests (Tailing with Timeout)
       shell: bash
       run: |
