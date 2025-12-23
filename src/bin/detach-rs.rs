@@ -1,16 +1,16 @@
 #![allow(unused)]
 
+use chrono::Local;
 #[cfg(unix)]
 use clap::{Parser, ValueEnum};
 use libc::{STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, dup2, fork, setsid};
-use log::{debug, info, LevelFilter, warn, trace};
+use log::{LevelFilter, debug, info, trace, warn};
 use std::fs::File as StdFile; // Rename to avoid conflict with tokio::fs::File
 #[cfg(unix)]
 use std::os::unix::io::AsRawFd;
 use std::path::PathBuf;
 use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, BufReader};
-use chrono::Local;
 
 use detach::Args;
 use detach::daemonize;
@@ -61,7 +61,13 @@ fn main() -> anyhow::Result<()> {
     if should_detach {
         debug!("Detaching process... Check logs at {:?}", log_file_path);
         // daemonize will now handle tokio runtime, logging, and timeout
-        daemonize(&log_file_path, log_level, args.timeout, service_future, false)?; // false for to_console
+        daemonize(
+            &log_file_path,
+            log_level,
+            args.timeout,
+            service_future,
+            false,
+        )?; // false for to_console
         // daemonize does not return in the child process, it exits.
         // So, this part is only reached by the parent process, which then exits.
         Ok(())
@@ -94,7 +100,8 @@ fn main() -> anyhow::Result<()> {
 
                                     loop {
                                         buffer.clear();
-                                        let bytes_read = reader.read_line(&mut buffer).await.unwrap_or(0);
+                                        let bytes_read =
+                                            reader.read_line(&mut buffer).await.unwrap_or(0);
 
                                         if bytes_read == 0 {
                                             sleep(Duration::from_millis(500)).await;
@@ -105,7 +112,10 @@ fn main() -> anyhow::Result<()> {
                                     }
                                 }
                                 Err(e) => {
-                                    eprintln!("Error opening log file for tailing: {:?}. Retrying...", e);
+                                    eprintln!(
+                                        "Error opening log file for tailing: {:?}. Retrying...",
+                                        e
+                                    );
                                     sleep(Duration::from_secs(1)).await;
                                 }
                             }
