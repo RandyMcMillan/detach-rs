@@ -33,7 +33,7 @@ jobs:
     - name: Run command-line tests (Non-daemonizing)
       run: |
         ./target/release/detach-rs --no-detach --log-file test_no_detach.log --timeout 5 && \
-        sleep 7 # Give it time to timeout
+        sleep 7 && true # Give it time to timeout
         grep "Service heartbeat" test_no_detach.log
         grep "Timeout reached" test_no_detach.log
       if: runner.os != 'Windows'
@@ -49,7 +49,7 @@ jobs:
     - name: Run command-line tests (Tailing with Timeout)
       run: |
         ./target/release/detach-rs --tail --log-file test_tail.log --timeout 10
-        sleep 12 # Give it time to timeout
+        sleep 12 && true # Give it time to timeout
         grep "Timeout reached" test_tail.log
       if: runner.os != 'Windows'
 
@@ -63,7 +63,7 @@ jobs:
     - name: Test daemonization with Timeout (Unix-like)
       run: |
         ./target/release/detach-rs --log-file test_daemonize.log --timeout 10 --detach & # Run daemonized with timeout
-        sleep 12 # Give the daemonized process time to start, timeout, and write to log
+        sleep 12 && true # Give the daemonized process time to start, timeout, and write to log
         grep "Timeout reached" test_daemonize.log
       if: runner.os != 'Windows'
 
