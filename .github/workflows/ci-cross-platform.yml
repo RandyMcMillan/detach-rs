@@ -128,6 +128,60 @@ jobs:
         grep "Command executed successfully." test_daemonize_cmd.log
       if: runner.os != 'Windows'
 
+    - name: Test --tail with timeout (Unix)
+      shell: bash
+      run: |
+        ./target/release/detach-rs --tail --log-file test_tail_timeout.log --timeout 5 > console_output_tail.log 2>&1
+        grep "Timeout reached after 5 seconds. Terminating service." console_output_tail.log
+        grep "Timeout reached after 5 seconds. Terminating service." test_tail_timeout.log # Also check log file
+      if: runner.os != 'Windows'
+
+    - name: Test --tail with timeout (Windows)
+      shell: bash
+      run: |
+        ./target/release/detach-rs.exe --tail --log-file test_tail_timeout.log --timeout 5 > console_output_tail.log 2>&1
+        findstr "Timeout reached after 5 seconds. Terminating service." console_output_tail.log
+        findstr "Timeout reached after 5 seconds. Terminating service." test_tail_timeout.log # Also check log file
+      if: runner.os == 'Windows'
+
+    - name: Test --tail with command success (Unix)
+      shell: bash
+      run: |
+        ./target/release/detach-rs --tail --log-file test_tail_cmd_success.log --command "echo hello" > console_output_tail_cmd.log 2>&1
+        grep "Executing command: \"echo hello\"" console_output_tail_cmd.log
+        grep "Command executed successfully." console_output_tail_cmd.log
+        grep "Executing command: \"echo hello\"" test_tail_cmd_success.log
+        grep "Command executed successfully." test_tail_cmd_success.log
+      if: runner.os != 'Windows'
+
+    - name: Test --tail with command success (Windows)
+      shell: bash
+      run: |
+        ./target/release/detach-rs.exe --tail --log-file test_tail_cmd_success.log --command "echo hello" > console_output_tail_cmd.log 2>&1
+        findstr "Executing command: \"echo hello\"" console_output_tail_cmd.log
+        findstr "Command executed successfully." console_output_tail_cmd.log
+        findstr "Executing command: \"echo hello\"" test_tail_cmd_success.log
+        findstr "Command executed successfully." test_tail_cmd_success.log
+      if: runner.os == 'Windows'
+
+    - name: Test --tail without --log-file (Unix)
+      shell: bash
+      run: |
+        ./target/release/detach-rs --tail --command "echo no_logfile_test" > console_output_no_logfile.log 2>&1
+        grep "Executing command: \"echo no_logfile_test\"" console_output_no_logfile.log
+        grep "Command executed successfully." console_output_no_logfile.log
+        ! test -f detach.log # Ensure default log file is NOT created
+      if: runner.os != 'Windows'
+
+    - name: Test --tail without --log-file (Windows)
+      shell: bash
+      run: |
+        ./target/release/detach-rs.exe --tail --command "echo no_logfile_test" > console_output_no_logfile.log 2>&1
+        findstr "Executing command: \"echo no_logfile_test\"" console_output_no_logfile.log
+        findstr "Command executed successfully." console_output_no_logfile.log
+        ! test -f detach.log # Ensure default log file is NOT created
+      if: runner.os == 'Windows'
+
 
 
 
