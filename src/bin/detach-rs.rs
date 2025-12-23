@@ -92,7 +92,6 @@ fn main() -> anyhow::Result<()> {
                 log_level,
                 args.timeout,
                 service_future,
-                false, // to_console is false for daemonize
             )?;
             Ok(())
         } else {
