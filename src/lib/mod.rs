@@ -196,7 +196,7 @@ where
                     debug!("Service future finished before timeout.");
                 }
                 _ = sleep(TokioDuration::from_secs(timeout_seconds)) => { // Use TokioDuration here
-                    debug!("Timeout reached after {} seconds. Terminating service.", timeout_seconds);
+                    info!("Timeout reached after {} seconds. Terminating service.", timeout_seconds);
                 }
             }
         } else {
