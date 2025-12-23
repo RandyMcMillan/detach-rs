@@ -95,6 +95,7 @@ fn main() -> anyhow::Result<()> {
                 } else {
                     // If not detaching and not tailing, just setup simple console logging
                     env_logger::Builder::new().filter_level(log_level).init();
+                    log::trace!("Trace logging is active in non-detached path.");
                 }
 
                 info!("Service started. PID: {}", std::process::id());
