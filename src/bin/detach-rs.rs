@@ -17,7 +17,7 @@ use detach::Args;
 use detach::daemonize;
 use detach::run_command_and_exit;
 use detach::run_service_async;
-use detach::setup_logging;
+use detach::setup_tracing_logging; // This will be added later, temporarily keep it here for compilation until moved
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
@@ -39,14 +39,17 @@ fn main() -> anyhow::Result<()> {
         args.log_file.clone()
     };
 
-    let log_level = args.logging.unwrap_or(log::LevelFilter::Info);
+    let should_detach_initial = args.detach && !args.no_detach && !args.tail; // Moved this line
 
-    let should_detach_initial = args.detach && !args.no_detach && !args.tail;
-
+    let log_level = args.logging.unwrap_or(log::LevelFilter::Info); // Original log_level assignment
 
     let to_console = args.command.is_some() || args.tail || !should_detach_initial;
 
-    setup_logging(&log_file_path, log_level, to_console)?;
+    // Only setup logging in the parent if it's not detaching.
+    // If detaching, logging will be set up in the daemonized child.
+    if !should_detach_initial {
+        setup_tracing_logging(&log_file_path, log_level, to_console)?; // Changed this line
+    }
 
 
     let rt = tokio::runtime::Builder::new_multi_thread()

@@ -1,10 +1,9 @@
 #![allow(unused)]
 
+use clap::Parser;
 use chrono::Local;
-use clap::{Parser, ValueEnum};
 #[cfg(unix)]
 use libc::{STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, dup2, fork, setsid};
-use log::{LevelFilter, debug, info, trace, warn};
 use std::fs::File as StdFile;
 #[cfg(unix)]
 use std::os::unix::io::AsRawFd;
@@ -17,20 +16,19 @@ use detach::Args;
 use detach::daemonize;
 use detach::run_command_and_exit;
 use detach::run_service_async;
-use detach::setup_logging;
+use detach::setup_tracing_logging; // Changed from setup_logging
 
 
 use anyhow::Result;
 use gnostr_relay::App;
-use tracing::info as tracing_info;
-use tracing_subscriber::{fmt, EnvFilter};
+// Removed: use tracing::info as tracing_info;
+// Removed: use tracing_subscriber::{fmt, EnvFilter};
+use tracing::{info, debug, trace, warn}; // Added direct tracing macros
 
 #[actix_web::main]
 async fn stat_relay() -> Result<()> {
     let args = Args::parse();
-    let filter = EnvFilter::new(args.logging.map(|l| l.as_str()).unwrap_or("info"));
-    fmt().with_env_filter(filter).init();
-    info!("Start relay server");
+    tracing::info!("Start relay server"); // Changed to tracing::info!
 
     let local_set = tokio::task::LocalSet::new();
 
@@ -47,7 +45,7 @@ async fn stat_relay() -> Result<()> {
         })
         .await?;
 
-    info!("Relay server shutdown");
+    tracing::info!("Relay server shutdown"); // Changed to tracing::info!
     Ok(())
 }
 
@@ -80,7 +78,8 @@ fn main() -> anyhow::Result<()> {
 
     let to_console = args.command.is_some() || args.tail || !should_detach_initial;
 
-    setup_logging(&log_file_path, log_level, to_console)?;
+    // Call the new tracing setup function
+    setup_tracing_logging(&log_file_path, log_level, to_console)?;
 
 
     let rt = tokio::runtime::Builder::new_multi_thread()
@@ -98,10 +97,10 @@ fn main() -> anyhow::Result<()> {
 
 
 
-        debug!("debug");
-        info!("info");
-        trace!("trace");
-        warn!("warn");
+        tracing::debug!("debug"); // Changed
+        tracing::info!("info");   // Changed
+        tracing::trace!("trace"); // Changed
+        tracing::warn!("warn");   // Changed
 
         let mut should_detach = should_detach_initial;
 
@@ -117,7 +116,7 @@ fn main() -> anyhow::Result<()> {
         let service_future = run_service_async();
 
         if should_detach {
-            debug!("Detaching process... Check logs at {:?}", log_file_path);
+            tracing::debug!("Detaching process... Check logs at {:?}", log_file_path); // Changed
 
             daemonize(
                 &log_file_path,
@@ -128,24 +127,24 @@ fn main() -> anyhow::Result<()> {
             Ok(())
         } else {
 
-            debug!("Service started. PID: {}", std::process::id());
+            tracing::debug!("Service started. PID: {}", std::process::id()); // Changed
 
             // Run the async service directly, respecting timeout if present
             if let Some(timeout_seconds) = args.timeout {
-                debug!("Setting timeout for {} seconds.", timeout_seconds);
+                tracing::debug!("Setting timeout for {} seconds.", timeout_seconds); // Changed
                 tokio::select! {
                     _ = service_future => {
-                        debug!("Service future finished before timeout.");
+                        tracing::debug!("Service future finished before timeout."); // Changed
                     }
                     _ = tokio::time::sleep(tokio::time::Duration::from_secs(timeout_seconds)) => {
-                        info!("Timeout reached after {} seconds. Terminating service.", timeout_seconds);
+                        tracing::info!("Timeout reached after {} seconds. Terminating service.", timeout_seconds); // Changed
                     }
                 }
             } else {
                 service_future.await?;
             }
 
-            info!("Service shutting down.");
+            tracing::info!("Service shutting down."); // Changed
             Ok(())
         }
     });
