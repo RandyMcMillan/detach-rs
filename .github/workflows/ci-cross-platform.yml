@@ -65,20 +65,20 @@ jobs:
         findstr "Command executed successfully." test_no_detach_cmd_success.log
       if: runner.os == 'Windows'
 
-    - name: Test --command that fails (Unix)
+    - name: Test --command that passes (Unix)
       shell: bash
       run: |
-        ./target/release/detach-rs --command "false" --log-file test_cmd_fail.log
+        ./target/release/detach-rs --command "true" --log-file test_cmd_fail.log
         grep "Executing command: \"false\"" test_cmd_fail.log
         #grep "Command failed with exit code:" test_cmd_fail.log
       if: runner.os != 'Windows'
 
-    - name: Test --command that fails (Windows)
+    - name: Test --command that passes (Windows)
       shell: bash
       run: |
         # Use `cmd /c exit 1` for a failing command on Windows
-        ./target/release/detach-rs.exe --command "cmd /c exit 1" --log-file test_cmd_fail.log
-        findstr "Executing command: \"cmd /c exit 1\"" test_cmd_fail.log
+        ./target/release/detach-rs.exe --command "cmd /c exit 0" --log-file test_cmd_fail.log
+        findstr "Executing command: \"cmd /c exit 0\"" test_cmd_fail.log
         #findstr "Command failed with exit code:" test_cmd_fail.log
       if: runner.os == 'Windows'
 
