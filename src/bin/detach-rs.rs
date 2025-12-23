@@ -5,16 +5,17 @@ use chrono::Local;
 use clap::{Parser, ValueEnum};
 use libc::{STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, dup2, fork, setsid};
 use log::{LevelFilter, debug, info, trace, warn};
-use std::fs::File as StdFile; // Rename to avoid conflict with tokio::fs::File
+use std::fs::File as StdFile;
 #[cfg(unix)]
 use std::os::unix::io::AsRawFd;
 use std::path::PathBuf;
+// REMOVED: use std::process::Command;
 use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, BufReader};
-use std::process::Command; // <-- Add this import
 
 use detach::Args;
 use detach::daemonize;
+use detach::run_command_and_exit;
 use detach::run_service_async;
 use detach::setup_logging;
 
@@ -43,25 +44,7 @@ fn main() -> anyhow::Result<()> {
 
     // --- NEW LOGIC FOR --command FLAG ---
     if let Some(cmd_str) = args.command {
-        // Setup logging for the command execution
-        setup_logging(&log_file_path, log_level, true)?; // Always log to console for command execution for immediate feedback
-
-        info!("Executing command: \"{}\"", cmd_str);
-
-        let status = Command::new("sh") // Use sh to allow complex commands
-            .arg("-c")
-            .arg(&cmd_str)
-            .status()?; // Execute and wait for status
-
-        if status.success() {
-            info!("Command executed successfully.");
-            std::process::exit(0); // Exit with success
-        } else {
-            // Log the error and exit with the command's exit code
-            let exit_code = status.code().unwrap_or(1);
-            eprintln!("Command failed with exit code: {}", exit_code);
-            std::process::exit(exit_code);
-        }
+        run_command_and_exit(cmd_str, &log_file_path, log_level)?;
     }
     // --- END NEW LOGIC ---
 
@@ -71,7 +54,6 @@ fn main() -> anyhow::Result<()> {
     warn!("warn");
 
     let mut should_detach = args.detach && !args.no_detach && !args.tail;
-
 
     #[cfg(not(unix))]
     {
