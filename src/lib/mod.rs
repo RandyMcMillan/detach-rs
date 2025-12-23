@@ -155,8 +155,9 @@ pub async fn run_command_and_exit(
                     warn!("Process did not exit after SIGINT. Sending SIGKILL.");
                     command.kill().await?; // Force kill
                 }
-                command.wait().await?; // Wait for it to be killed or exit
-                return Err(anyhow::anyhow!("Command timed out.")); // Indicate timeout as an error
+                command.wait().await?;
+                info!("Command timed out after {} seconds.", seconds); // not and error
+                return Ok(());
             }
         }
     } else {
