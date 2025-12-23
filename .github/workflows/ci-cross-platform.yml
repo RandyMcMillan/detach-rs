@@ -214,6 +214,66 @@ jobs:
         test -f "$PWD/custom_absolute.log" # Ensure custom log file is created
       if: runner.os == 'Windows'
 
+    - name: Test --logging Debug (Unix)
+      shell: bash
+      env:
+        DETACH_TEST_HEARTBEATS: 1 # Ensure run_service_async runs at least once
+      run: |
+        ./target/release/detach-rs --no-detach --log-file test_logging_debug.log --logging Debug
+        grep "Service heartbeat #0" test_logging_debug.log
+        grep "Service shutting down." test_logging_debug.log
+      if: runner.os != 'Windows'
+
+    - name: Test --logging Debug (Windows)
+      shell: bash
+      env:
+        DETACH_TEST_HEARTBEATS: 1
+      run: |
+        ./target/release/detach-rs.exe --no-detach --log-file test_logging_debug.log --logging Debug
+        findstr "Service heartbeat #0" test_logging_debug.log
+        findstr "Service shutting down." test_logging_debug.log
+      if: runner.os == 'Windows'
+
+    - name: Test --logging Info (Unix)
+      shell: bash
+      env:
+        DETACH_TEST_HEARTBEATS: 1
+      run: |
+        ./target/release/detach-rs --no-detach --log-file test_logging_info.log --logging Info
+        ! grep -q "Service heartbeat #0" test_logging_info.log # Debug message should NOT be present
+        grep "Service shutting down." test_logging_info.log # Info message SHOULD be present
+      if: runner.os != 'Windows'
+
+    - name: Test --logging Info (Windows)
+      shell: bash
+      env:
+        DETACH_TEST_HEARTBEATS: 1
+      run: |
+        ./target/release/detach-rs.exe --no-detach --log-file test_logging_info.log --logging Info
+        ! findstr /c:"Service heartbeat #0" test_logging_info.log # Debug message should NOT be present
+        findstr "Service shutting down." test_logging_info.log # Info message SHOULD be present
+      if: runner.os == 'Windows'
+
+    - name: Test --logging Warn (Unix)
+      shell: bash
+      run: |
+        ./target/release/detach-rs --log-file test_logging_warn.log --logging Warn --command "sleep 5" --timeout 2
+        ! grep -q "Executing command: \"sleep 5\"" test_logging_warn.log # Info message should NOT be present
+        ! grep -q "Service heartbeat #0" test_logging_warn.log # Debug message should NOT be present
+        grep "Command timed out after 2 seconds. Attempting graceful shutdown (SIGINT)." test_logging_warn.log # Warn message SHOULD be present
+        grep "Command timed out after 2 seconds." test_logging_warn.log # Info message should be present
+      if: runner.os != 'Windows'
+
+    - name: Test --logging Warn (Windows)
+      shell: bash
+      run: |
+        ./target/release/detach-rs.exe --log-file test_logging_warn.log --logging Warn --command "timeout /T 5 /NOBREAK >nul" --timeout 2
+        ! findstr /c:"Executing command: \"timeout /T 5 /NOBREAK >nul\"" test_logging_warn.log # Info message should NOT be present
+        ! findstr /c:"Service heartbeat #0" test_logging_warn.log # Debug message should NOT be present
+        findstr "Command timed out after 2 seconds. Attempting graceful shutdown" test_logging_warn.log # Warn message SHOULD be present
+        findstr "Command timed out after 2 seconds." test_logging_warn.log # Info message should be present
+      if: runner.os == 'Windows'
+
 
 
 
