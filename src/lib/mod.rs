@@ -204,6 +204,7 @@ where
         }
 
         info!("Daemon process shutting down.");
+        tokio::time::sleep(TokioDuration::from_millis(100)).await;
         std::process::exit(0);
     });
     // This part is unreachable as std::process::exit(0) is called above.
