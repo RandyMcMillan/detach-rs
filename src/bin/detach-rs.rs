@@ -1,8 +1,8 @@
 #![allow(unused)]
 
 use chrono::Local;
-#[cfg(unix)]
 use clap::{Parser, ValueEnum};
+#[cfg(unix)]
 use libc::{STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, dup2, fork, setsid};
 use log::{LevelFilter, debug, info, trace, warn};
 use std::fs::File as StdFile;
