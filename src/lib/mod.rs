@@ -1,4 +1,3 @@
-
 use anyhow;
 use clap::Parser;
 use log::{info, warn};
@@ -7,7 +6,6 @@ use tokio::process::Command;
 use tokio::time::{timeout, Duration as TokioDuration};
 #[cfg(unix)]
 use libc::{kill, SIGINT};
-
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "A detached Rust background service")]
@@ -23,7 +21,6 @@ pub struct Args {
 
     #[arg(long, default_value_t = false, conflicts_with = "detach")]
     pub tail: bool,
-
 
 
     #[arg(long, default_value = "./detach.log")]
