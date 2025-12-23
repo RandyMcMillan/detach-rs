@@ -41,32 +41,37 @@ fn main() -> anyhow::Result<()> {
 
     let log_level = args.logging.unwrap_or(log::LevelFilter::Info);
 
+    let should_detach_initial = args.detach && !args.no_detach && !args.tail; // Determine this earlier
+
+    // Determine `to_console` based on command, tail, or detach status
+    let to_console = args.command.is_some() || args.tail || !should_detach_initial; // Log to console if command, tail, or not detaching
+
+    setup_logging(&log_file_path, log_level, to_console)?; // SINGLE setup_logging call
+
     // Build the tokio runtime once
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .unwrap();
 
-    rt.block_on(async {
+    let result = rt.block_on(async {
         // Wrap the main logic in an async block
         // --- NEW LOGIC FOR --command FLAG ---
         if let Some(cmd_str) = args.command {
-            match run_command_and_exit(cmd_str, &log_file_path, log_level, args.timeout).await {
-                Ok(_) => std::process::exit(0),
-                Err(e) => {
-                    eprintln!("Command execution failed: {}", e);
-                    std::process::exit(1); // Exit with a non-zero code for failure
-                }
-            }
+            return match run_command_and_exit(cmd_str, &log_file_path, log_level, args.timeout).await {
+                Ok(_) => Ok(()),
+                Err(e) => Err(e),
+            };
         }
         // --- END NEW LOGIC ---
 
+        // These debug/info/trace/warn calls should be after setup_logging
         debug!("debug");
         info!("info");
         trace!("trace");
         warn!("warn");
 
-        let mut should_detach = args.detach && !args.no_detach && !args.tail;
+        let mut should_detach = should_detach_initial; // Use the initial determination
 
         #[cfg(not(unix))]
         {
@@ -87,64 +92,10 @@ fn main() -> anyhow::Result<()> {
                 log_level,
                 args.timeout,
                 service_future,
-                false,
-            )?; // false for to_console
-            // daemonize does not return in the child process, it exits.
-            // So, this part is only reached by the parent process, which then exits.
+            )?;
             Ok(())
         } else {
-            // This else block already has a tokio runtime in place from before.
-            // We need to move the logging setup from here outside to avoid double setup
-            // when --command is used.
-            // Logging setup and tailing logic (if args.tail)
-            if args.tail {
-                // Use setup_logging for file and console output
-                setup_logging(&log_file_path, log_level, true)?;
-                debug!("Tailing log file: {:?}", log_file_path);
-
-                // Spawn tailing task
-                let tail_log_file_path = log_file_path.clone();
-                tokio::spawn(async move {
-                    use std::time::Duration;
-                    use tokio::fs::File;
-                    use tokio::io::{AsyncBufReadExt, BufReader};
-                    use tokio::time::sleep;
-
-                    loop {
-                        match File::open(&tail_log_file_path).await {
-                            Ok(file) => {
-                                let mut reader = BufReader::new(file);
-                                let mut buffer = String::new();
-                                let mut offset = 0;
-
-                                loop {
-                                    buffer.clear();
-                                    let bytes_read =
-                                        reader.read_line(&mut buffer).await.unwrap_or(0);
-
-                                    if bytes_read == 0 {
-                                        sleep(Duration::from_millis(500)).await;
-                                    } else {
-                                        debug!("{}", buffer);
-                                        offset += bytes_read as u64;
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                eprintln!(
-                                    "Error opening log file for tailing: {:?}. Retrying...",
-                                    e
-                                );
-                                sleep(Duration::from_secs(1)).await;
-                            }
-                        }
-                    }
-                });
-            } else {
-                // If not detaching and not tailing, just setup simple console logging
-                setup_logging(&log_file_path, log_level, true)?;
-            }
-
+            // All setup_logging calls removed from here
             debug!("Service started. PID: {}", std::process::id());
 
             // Run the async service directly
@@ -153,5 +104,6 @@ fn main() -> anyhow::Result<()> {
             info!("Service shutting down.");
             Ok(())
         }
-    }) // End of rt.block_on(async { ... })
+    }); // End of rt.block_on(async { ... })
+    result // Main function returns the result of the async block
 }

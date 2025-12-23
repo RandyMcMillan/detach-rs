@@ -57,10 +57,12 @@
 //! Note: On non-Unix systems, daemonization is not supported, and `--detach` will be ignored.
 use anyhow;
 use clap::Parser;
-use log::{info, warn}; // Added warn for timeout message
+use log::{info, warn};
 use std::path::PathBuf;
 use tokio::process::Command;
 use tokio::time::{timeout, Duration as TokioDuration};
+use libc::{kill, SIGINT};
+
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "A detached Rust background service")]
@@ -117,14 +119,13 @@ use std::os::unix::io::AsRawFd;
 /// explicitly calls `std::process::exit()`. It returns `()` for compilation.
 pub async fn run_command_and_exit(
     cmd_str: String,
-    log_file_path: &PathBuf,
-    log_level: log::LevelFilter,
+    _log_file_path: &PathBuf, // Marked as unused
+    _log_level: log::LevelFilter, // Marked as unused
     timeout_seconds: Option<u64>,
 ) -> anyhow::Result<()> {
-    // Setup logging for the command execution (always to console for immediate feedback)
-    setup_logging(log_file_path, log_level, true)?;
-
     info!("Executing command: \"{}\"", cmd_str);
+
+
 
     let mut command = Command::new("sh") // Use sh to allow complex commands
         .arg("-c")
@@ -138,11 +139,23 @@ pub async fn run_command_and_exit(
             Ok(Err(e)) => Err(anyhow::anyhow!("Failed to wait for command: {}", e)), // Error waiting for command
                         Err(_elapsed) => { // Timeout occurred
                 warn!(
-                    "Command timed out after {} seconds. Killing process.",
+                    "Command timed out after {} seconds. Attempting graceful shutdown (SIGINT).",
                     seconds
                 );
-                command.kill().await?; // Kill the process
-                command.wait().await?; // Wait for it to be killed
+                let pid = command.id().expect("Failed to get child process ID");
+                unsafe {
+                    kill(pid as i32, SIGINT);
+                }
+
+                // Give the process a short grace period to shut down gracefully
+                tokio::time::sleep(TokioDuration::from_millis(2000)).await;
+
+                // Check if the command is still running
+                if command.try_wait()?.is_none() {
+                    warn!("Process did not exit after SIGINT. Sending SIGKILL.");
+                    command.kill().await?; // Force kill
+                }
+                command.wait().await?; // Wait for it to be killed or exit
                 return Err(anyhow::anyhow!("Command timed out.")); // Indicate timeout as an error
             }
         }
@@ -241,11 +254,10 @@ pub async fn run_command_and_exit(
 /// system calls. Care has been taken to ensure their correct usage for daemonization.
 #[cfg(unix)]
 pub fn daemonize<F>(
-    log_path: &PathBuf,
-    level: log::LevelFilter,
+    _log_path: &PathBuf, // Marked as unused
+    _level: log::LevelFilter, // Marked as unused
     timeout: Option<u64>,
     service_future: F,
-    to_console: bool,
 ) -> Result<(), anyhow::Error>
 where
     F: std::future::Future<Output = Result<(), anyhow::Error>> + Send + 'static,
@@ -284,9 +296,6 @@ where
         dup2(fd, STDOUT_FILENO);
         dup2(fd, STDERR_FILENO);
     }
-
-    // Setup file logging since we no longer have a stdout
-    setup_logging(log_path, level, to_console)?;
 
     // IMPORTANT: Re-initialize tokio runtime AFTER daemonization
     // This prevents issues with forking a multi-threaded runtime.
@@ -328,11 +337,10 @@ where
 
 #[cfg(not(unix))]
 pub fn daemonize<F>(
-    _log_path: &PathBuf,
-    _level: log::LevelFilter,
+    __log_path: &PathBuf, // Marked as unused
+    __level: log::LevelFilter, // Marked as unused
     _timeout: Option<u64>,
     _service_future: F,
-    _to_console: bool,
 ) -> Result<(), anyhow::Error>
 where
     F: std::future::Future<Output = Result<(), anyhow::Error>> + Send + 'static,
