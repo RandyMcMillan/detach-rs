@@ -1,7 +1,7 @@
 #![allow(unused)]
 
-use clap::{Parser, ValueEnum};
 use chrono::Local;
+use clap::{Parser, ValueEnum};
 #[cfg(unix)]
 use libc::{STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, dup2, fork, setsid};
 use std::fs::File as StdFile;
@@ -18,10 +18,9 @@ use detach::run_command_and_exit;
 use detach::run_service_async;
 use detach::setup_tracing_logging; // Changed from setup_logging
 
-
 use anyhow::Result;
 use gnostr_relay::App;
-use tracing::{info, debug, trace, warn}; // Added direct tracing macros
+use tracing::{debug, info, trace, warn}; // Added direct tracing macros
 
 #[actix_web::main]
 async fn stat_relay() -> Result<()> {
@@ -47,25 +46,19 @@ async fn stat_relay() -> Result<()> {
     Ok(())
 }
 
-
-
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
-
 
     let default_log_file = PathBuf::from("./gnostr-relay-detach.log");
 
     let log_file_path = if args.log_file == default_log_file {
-
         let now = Local::now();
         let timestamp_str = now.format("%Y%m%d-%H%M%S").to_string();
         let timestamped_filename = format!("detach-{}.log", timestamp_str);
         std::env::current_dir()?.join(timestamped_filename)
     } else if args.log_file.is_relative() {
-
         std::env::current_dir()?.join(&args.log_file)
     } else {
-
         args.log_file.clone()
     };
 
@@ -73,14 +66,12 @@ fn main() -> anyhow::Result<()> {
 
     let should_detach_initial = args.detach && !args.no_detach && !args.tail;
 
-
     let to_console = args.command.is_some() || args.tail || !should_detach_initial;
 
     // Call the new tracing setup function conditionally
     if !should_detach_initial {
         setup_tracing_logging(&log_file_path, log_level, to_console)?;
     }
-
 
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
