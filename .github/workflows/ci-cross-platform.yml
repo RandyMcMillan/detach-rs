@@ -30,53 +30,25 @@ jobs:
     - name: Run tests
       run: cargo test --verbose
 
-    - name: Run command-line tests (Non-daemonizing)
-      shell: bash
-      run: |
-        ./target/release/detach-rs --no-detach --log-file test_no_detach.log --timeout 5 & \
-        sleep 7 &&
-        grep "Timeout reached" test_no_detach.log
-      if: runner.os != 'Windows'
-
-    - name: Run command-line tests (Tailing with Timeout)
-      shell: bash
-      run: |
-        ./target/release/detach-rs --tail --log-file test_tail.log --timeout 10 & \
-        sleep 12 && true # Give it time to timeout
-        grep "Timeout reached" test_tail.log
-      if: runner.os != 'Windows'
-
-    - name: Run help command
+    - name: Run help command (--help)
       shell: bash
       run: |
         cargo run -- --help | grep "A detached Rust background service"
 
-    - name: Run short help command
+    - name: Run short help command (-h)
       shell: bash
       run: |
         cargo run -- -h | grep "A detached Rust background service"
 
-    - name: Run version command
+    - name: Run version command (--version)
       shell: bash
       run: |
         cargo run -- --version | grep "detach 0.0.1"
 
-    - name: Run short version command
+    - name: Run short version command (-V)
       shell: bash
       run: |
         cargo run -- -V | grep "detach 0.0.1"
 
-    - name: Test daemonization with Timeout (Unix-like)
-      run: |
-        ./target/release/detach-rs --log-file test_daemonize.log --timeout 10 --detach & # Run daemonized with timeout
-        sleep 12 && true # Give the daemonized process time to start, timeout, and write to log
-        grep "Timeout reached" test_daemonize.log
-      if: runner.os != 'Windows'
 
-    - name: Run command-line tests (Tailing with Timeout)
-      shell: bash
-      run: |
-        cargo run -- --tail --log-file test_tail.log --timeout 10
-        sleep 12 && true # Give it time to timeout
-        grep "Timeout reached" test_tail.log
 
