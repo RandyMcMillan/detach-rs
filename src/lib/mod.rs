@@ -1,12 +1,11 @@
 use anyhow;
 use clap::Parser;
- // Replaced log imports
+// Replaced log imports
 
 // New tracing imports
-use tracing_subscriber::{self, prelude::*, fmt::writer::MakeWriterExt};
-use tracing_log::LogTracer;
- // Or just use tracing::Level if it compiles
-
+use tracing_subscriber::{self, fmt::writer::MakeWriterExt, prelude::*};
+//use tracing_log::LogTracer;
+// Or just use tracing::Level if it compiles
 
 // A wrapper for initializing tracing-subscriber (Robust version)
 pub fn setup_tracing_logging(
@@ -24,9 +23,10 @@ pub fn setup_tracing_logging(
         .with_writer(file);
 
     let filter = tracing_subscriber::filter::EnvFilter::builder()
-        .with_default_directive(tracing_subscriber::filter::LevelFilter::from_level(converted_tracing_level).into())
+        .with_default_directive(
+            tracing_subscriber::filter::LevelFilter::from_level(converted_tracing_level).into(),
+        )
         .from_env_lossy(); // Removed .build()?
-
 
     // Initialize the registry based on to_console
     let init_result = if to_console {
@@ -51,19 +51,20 @@ pub fn setup_tracing_logging(
     }
 
     // Route log messages through tracing
-    let log_tracer_init_result = LogTracer::builder()
-        .with_max_level(level)
-        .init();
+    //let log_tracer_init_result = LogTracer::builder()
+    //    .with_max_level(level)
+    //    .init();
 
-    if let Err(e) = log_tracer_init_result {
-        eprintln!("Warning: Failed to initialize LogTracer: {}", e);
-    }
+    //if let Err(e) = log_tracer_init_result {
+    //    eprintln!("Warning: Failed to initialize LogTracer: {}", e);
+    //}
 
     Ok(())
 }
 
 // Helper function to map log::Level to tracing::Level
-fn map_log_level_to_tracing_level(level: log::Level) -> tracing::Level { // Explicitly use tracing::Level here
+fn map_log_level_to_tracing_level(level: log::Level) -> tracing::Level {
+    // Explicitly use tracing::Level here
     match level {
         log::Level::Error => tracing::Level::ERROR,
         log::Level::Warn => tracing::Level::WARN,
@@ -72,39 +73,32 @@ fn map_log_level_to_tracing_level(level: log::Level) -> tracing::Level { // Expl
         log::Level::Trace => tracing::Level::TRACE,
     }
 }
+#[cfg(unix)]
+use libc::{SIGINT, kill};
 use std::path::PathBuf;
 use tokio::process::Command;
-use tokio::time::{timeout, Duration as TokioDuration};
-#[cfg(unix)]
-use libc::{kill, SIGINT};
+use tokio::time::{Duration as TokioDuration, timeout};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "A detached Rust background service")]
 pub struct Args {
-
     #[arg(long, default_value_t = false)]
     pub detach: bool,
-
 
     #[arg(long = "no-detach")]
     pub no_detach: bool,
 
-
     #[arg(long, default_value_t = false, conflicts_with = "detach")]
     pub tail: bool,
-
 
     #[arg(long, default_value = "./detach.log")]
     pub log_file: PathBuf,
 
-
     #[arg(long, short, value_name = "SECONDS")]
     pub timeout: Option<u64>,
 
-
     #[arg(long, short, value_name = "LEVEL", value_enum)]
     pub logging: Option<log::LevelFilter>,
-
 
     #[arg(long, value_name = "COMMAND", conflicts_with_all = ["detach", "tail"])]
     pub command: Option<String>,
@@ -117,7 +111,6 @@ use std::fs::File as StdFile;
 #[cfg(unix)]
 use std::os::unix::io::AsRawFd;
 
-
 pub async fn run_command_and_exit(
     cmd_str: String,
     _log_file_path: &PathBuf,
@@ -126,20 +119,18 @@ pub async fn run_command_and_exit(
 ) -> anyhow::Result<()> {
     tracing::info!("Executing command: \"{}\"", cmd_str);
 
-
-
-    let mut command = Command::new("sh")
-        .arg("-c")
-        .arg(&cmd_str)
-        .spawn()?;
+    let mut command = Command::new("sh").arg("-c").arg(&cmd_str).spawn()?;
 
     let status_result = if let Some(seconds) = timeout_seconds {
         tracing::info!("Command will timeout after {} seconds.", seconds);
         match timeout(TokioDuration::from_secs(seconds), command.wait()).await {
             Ok(Ok(status)) => Ok(status),
             Ok(Err(e)) => Err(anyhow::anyhow!("Failed to wait for command: {}", e)),
-                        Err(_elapsed) => {
-                tracing::warn!("Command timed out after {} seconds. Attempting graceful shutdown (SIGINT).", seconds);
+            Err(_elapsed) => {
+                tracing::warn!(
+                    "Command timed out after {} seconds. Attempting graceful shutdown (SIGINT).",
+                    seconds
+                );
                 #[cfg(unix)]
                 {
                     let pid = command.id().expect("Failed to get child process ID");
@@ -153,12 +144,12 @@ pub async fn run_command_and_exit(
                     // through the standard library process API. The `command.kill()` will send a
                     // more forceful termination signal. For now, we'll just log and proceed to the
                     // hard kill if the process doesn't exit after the sleep.
-                    tracing::warn!("Cannot send SIGINT equivalent on non-Unix platforms. Proceeding to hard kill if necessary.");
+                    tracing::warn!(
+                        "Cannot send SIGINT equivalent on non-Unix platforms. Proceeding to hard kill if necessary."
+                    );
                 }
 
-
                 tokio::time::sleep(TokioDuration::from_millis(2000)).await;
-
 
                 if command.try_wait()?.is_none() {
                     tracing::warn!("Process did not exit after SIGINT. Sending SIGKILL.");
@@ -173,25 +164,21 @@ pub async fn run_command_and_exit(
         Ok(command.wait().await?)
     };
 
-        let status_result_unwrapped = status_result?;
+    let status_result_unwrapped = status_result?;
 
-    
+    if status_result_unwrapped.success() {
+        tracing::info!("Command executed successfully.");
 
-        if status_result_unwrapped.success() {
+        Ok(())
+    } else {
+        let exit_code = status_result_unwrapped.code().unwrap_or(1);
 
-            tracing::info!("Command executed successfully.");
-
-            Ok(())
-
-        } else {
-
-            let exit_code = status_result_unwrapped.code().unwrap_or(1);
-
-            Err(anyhow::anyhow!("Command failed with exit code: {}", exit_code))
-
-        }
+        Err(anyhow::anyhow!(
+            "Command failed with exit code: {}",
+            exit_code
+        ))
+    }
 }
-
 
 #[cfg(unix)]
 pub fn daemonize<F>(
@@ -242,8 +229,13 @@ where
         // Temporary direct write for debugging
         use std::io::Write;
         if let Ok(mut file) = std::fs::OpenOptions::new().append(true).open(log_path) {
-            writeln!(file, "DEBUG: Direct write from daemonize after logging setup.").expect("Failed to write debug message directly.");
-            file.flush().expect("Failed to flush log file after direct write."); // Add flush
+            writeln!(
+                file,
+                "DEBUG: Direct write from daemonize after logging setup."
+            )
+            .expect("Failed to write debug message directly.");
+            file.flush()
+                .expect("Failed to flush log file after direct write."); // Add flush
         }
     }
 
@@ -299,7 +291,7 @@ where
 
 #[cfg(not(unix))]
 pub fn daemonize<F>(
-    __log_path: &PathBuf, // Marked as unused
+    __log_path: &PathBuf,      // Marked as unused
     __level: log::LevelFilter, // Marked as unused
     _timeout: Option<u64>,
     _service_future: F,
@@ -310,8 +302,6 @@ where
     eprintln!("Daemonization is not supported on this operating system.");
     Ok(()) // Or return an error if you want to explicitly signal failure
 }
-
-
 
 /// A default asynchronous service future that simulates a background task with heartbeats.
 ///
@@ -324,7 +314,6 @@ where
 /// - `Ok(())`: If the service completes its simulated task.
 /// - `Err(anyhow::Error)`: If an error occurs during its execution.
 pub async fn run_service_async() -> anyhow::Result<()> {
-
     use std::env; // Import std::env
     let mut count = 0;
     let max_heartbeats = env::var("DETACH_TEST_HEARTBEATS")
@@ -337,7 +326,8 @@ pub async fn run_service_async() -> anyhow::Result<()> {
         tokio::time::sleep(TokioDuration::from_secs(10)).await;
         count += 1;
 
-        if count >= max_heartbeats { // Changed to >= for clarity, though > 100 also works
+        if count >= max_heartbeats {
+            // Changed to >= for clarity, though > 100 also works
             break;
         }
         tracing::debug!("count: {}", count);
