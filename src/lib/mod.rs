@@ -56,7 +56,8 @@
 //!
 //! Note: On non-Unix systems, daemonization is not supported, and `--detach` will be ignored.
 use anyhow;
-use clap::Parser; // Add clap imports
+use clap::Parser;
+use log::info;
 use std::path::PathBuf;
 use tokio::time::Duration;
 
@@ -172,6 +173,7 @@ pub fn daemonize<F>(
     level: log::LevelFilter,
     timeout: Option<u64>,
     service_future: F,
+    to_console: bool,
 ) -> Result<(), anyhow::Error>
 where
     F: std::future::Future<Output = Result<(), anyhow::Error>> + Send + 'static,
@@ -212,30 +214,32 @@ where
     }
 
     // Setup file logging since we no longer have a stdout
-    setup_logging(log_path, level)?;
+    setup_logging(log_path, level, to_console)?;
 
     // IMPORTANT: Re-initialize tokio runtime AFTER daemonization
     // This prevents issues with forking a multi-threaded runtime.
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
-        .unwrap(); // Panics if runtime cannot be built
+        .unwrap();
 
     rt.block_on(async {
-        use log::info; // Import info here as well
+        use log::{debug, info, trace, warn};
         use tokio::time::sleep;
         use std::time::Duration;
 
-        info!("Daemon process started. PID: {}", std::process::id());
+        debug!("Daemon process started. PID: {}", std::process::id());
+        trace!("Daemon process started. PID: {}", std::process::id());
+        warn!("Daemon process started. PID: {}", std::process::id());
 
         if let Some(timeout_seconds) = timeout {
-            info!("Setting timeout for {} seconds.", timeout_seconds);
+            debug!("Setting timeout for {} seconds.", timeout_seconds);
             tokio::select! {
                 _ = service_future => {
-                    info!("Service future finished before timeout.");
+                    debug!("Service future finished before timeout.");
                 }
                 _ = sleep(Duration::from_secs(timeout_seconds)) => {
-                    info!("Timeout reached after {} seconds. Terminating service.", timeout_seconds);
+                    debug!("Timeout reached after {} seconds. Terminating service.", timeout_seconds);
                 }
             }
         } else {
@@ -256,6 +260,7 @@ pub fn daemonize<F>(
     _level: log::LevelFilter,
     _timeout: Option<u64>,
     _service_future: F,
+    _to_console: bool,
 ) -> Result<(), anyhow::Error>
 where
     F: std::future::Future<Output = Result<(), anyhow::Error>> + Send + 'static,
@@ -265,7 +270,8 @@ where
 }
 
 #[cfg(unix)]
-pub fn setup_logging(path: &PathBuf, level: log::LevelFilter) -> Result<(), anyhow::Error> {
+pub fn setup_logging(path: &PathBuf, level: log::LevelFilter, to_console: bool) -> Result<(), anyhow::Error> {
+    use log4rs::append::console::ConsoleAppender;
     use log4rs::append::file::FileAppender;
     use log4rs::config::{Appender, Config, Root};
     use log4rs::encode::pattern::PatternEncoder;
@@ -274,20 +280,32 @@ pub fn setup_logging(path: &PathBuf, level: log::LevelFilter) -> Result<(), anyh
         .encoder(Box::new(PatternEncoder::new("{d} - {l} - {m}\n")))
         .build(path)?;
 
-    let config = Config::builder()
-        .appender(Appender::builder().build("logfile", Box::new(logfile)))
-        .build(Root::builder().appender("logfile").build(level))?;
+    let mut config_builder = Config::builder();
+    let mut root_builder = Root::builder();
+
+    config_builder = config_builder.appender(Appender::builder().build("logfile", Box::new(logfile)));
+    root_builder = root_builder.appender("logfile");
+
+    if to_console {
+        let stdout = ConsoleAppender::builder()
+            .encoder(Box::new(PatternEncoder::new("{d} - {l} - {m}\n")))
+            .build();
+        config_builder = config_builder.appender(Appender::builder().build("stdout", Box::new(stdout)));
+        root_builder = root_builder.appender("stdout");
+    }
+
+    let config = config_builder
+        .build(root_builder.build(level))?;
 
     log4rs::init_config(config)?;
     Ok(())
 }
 
 #[cfg(not(unix))]
-pub fn setup_logging(_path: &PathBuf, _level: log::LevelFilter) -> Result<(), anyhow::Error> {
-    use log::LevelFilter;
-    eprintln!(
-        "File logging with log4rs is not supported on this operating system when daemonizing."
-    );
+
+pub fn setup_logging(_path: &PathBuf, _level: log::LevelFilter, _to_console: bool) -> Result<(), anyhow::Error> {
+
+    eprintln!("File logging with log4rs is not supported on this operating system when daemonizing.");
     // For non-unix, if daemonize is called (which it won't be if cfg(not(unix)))
     // then we would rely on main to setup a console logger if not tailing.
     Ok(())
@@ -304,17 +322,17 @@ pub fn setup_logging(_path: &PathBuf, _level: log::LevelFilter) -> Result<(), an
 /// - `Ok(())`: If the service completes its simulated task.
 /// - `Err(anyhow::Error)`: If an error occurs during its execution.
 pub async fn run_service_async() -> anyhow::Result<()> {
-    use log::info;
+    use log::debug;
     let mut count = 0;
     loop {
-        info!("Service heartbeat #{}", count);
+        debug!("Service heartbeat #{}", count);
         tokio::time::sleep(Duration::from_secs(10)).await;
         count += 1;
 
         if count > 100 {
             break;
         }
-        info!("count: {}", count);
+        debug!("count: {}", count);
     }
     info!("Service shutting down.");
     Ok(())
