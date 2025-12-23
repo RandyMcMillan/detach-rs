@@ -57,6 +57,37 @@
 //! Note: On non-Unix systems, daemonization is not supported, and `--detach` will be ignored.
 use anyhow;
 use std::path::PathBuf;
+use clap::Parser; // Add clap imports
+
+#[derive(Parser, Debug)]
+#[command(author, version, about = "A detached Rust background service")]
+pub struct Args {
+    /// Run the process in the background
+    #[arg(long, default_value_t = true)]
+    pub detach: bool,
+
+    /// Run the process in the foreground (disable detachment)
+    #[arg(long = "no-detach")]
+    pub no_detach: bool,
+
+    /// tail logging
+    #[arg(long, default_value_t = false)]
+    pub tail: bool,
+
+    /// Path to the log file
+    //TODO handle canonical relative path
+    #[arg(long, default_value = "./detach.log")]
+    pub log_file: PathBuf,
+
+    /// Timeout after a specified number of seconds
+    #[arg(long, short, value_name = "SECONDS")]
+    pub timeout: Option<u64>,
+
+    /// Set the logging level (e.g., "error", "warn", "info", "debug", "trace")
+    #[arg(long, short, value_name = "LEVEL", value_enum)]
+    pub logging: Option<log::LevelFilter>, // Use log::LevelFilter from the log crate
+}
+
 
 use tokio::time::Duration;
 
