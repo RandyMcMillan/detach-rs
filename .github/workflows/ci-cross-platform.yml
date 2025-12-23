@@ -41,8 +41,8 @@ jobs:
     - name: Run command-line tests (Non-daemonizing)
       shell: bash
       run: |
-        .\target\release\detach-rs.exe --no-detach --log-file test_no_detach.log --timeout 5 & \
-        timeout /T 7 /NOBREAK >nul # Give it time to timeout
+        .\target\release\detach-rs.exe --no-detach --log-file test_no_detach.log --timeout 5
+        timeout /T 7 /NOBREAK >nul
         findstr "Timeout reached" test_no_detach.log
       if: runner.os == 'Windows'
 
