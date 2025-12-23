@@ -1,10 +1,9 @@
 #![allow(unused)]
 
-use chrono::Local;
 use clap::{Parser, ValueEnum};
+use chrono::Local;
 #[cfg(unix)]
 use libc::{STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, dup2, fork, setsid};
-use log::{LevelFilter, debug, info, trace, warn};
 use std::fs::File as StdFile;
 #[cfg(unix)]
 use std::os::unix::io::AsRawFd;
@@ -17,13 +16,12 @@ use detach::Args;
 use detach::daemonize;
 use detach::run_command_and_exit;
 use detach::run_service_async;
-use detach::setup_logging;
+use detach::setup_tracing_logging; // Changed from setup_logging
 
 
 use anyhow::Result;
 use gnostr_relay::App;
-use tracing::info as tracing_info;
-use tracing_subscriber::{fmt, EnvFilter};
+use tracing::{info, debug, trace, warn}; // Added direct tracing macros
 
 #[actix_web::main]
 async fn stat_relay() -> Result<()> {
