@@ -1,7 +1,7 @@
 #![allow(unused)]
 
-use clap::{Parser, ValueEnum};
 use chrono::Local;
+use clap::{Parser, ValueEnum};
 #[cfg(unix)]
 use libc::{STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, dup2, fork, setsid};
 use std::fs::File as StdFile;
@@ -17,32 +17,27 @@ use detach::daemonize;
 use detach::run_command_and_exit;
 use detach::run_service_async;
 use detach::setup_tracing_logging; // Changed from setup_logging
-use tracing::{info, debug, trace, warn}; // Added direct tracing macros
+use tracing::{debug, info, trace, warn}; // Added direct tracing macros
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
-
     let default_log_file = PathBuf::from("./detach.log");
 
     let log_file_path = if args.log_file == default_log_file {
-
         let now = Local::now();
         let timestamp_str = now.format("%Y%m%d-%H%M%S").to_string();
         let timestamped_filename = format!("detach-{}.log", timestamp_str);
         std::env::current_dir()?.join(timestamped_filename)
     } else if args.log_file.is_relative() {
-
         std::env::current_dir()?.join(&args.log_file)
     } else {
-
         args.log_file.clone()
     };
 
     let log_level = args.logging.unwrap_or(log::LevelFilter::Info);
 
     let should_detach_initial = args.detach && !args.no_detach && !args.tail;
-
 
     let to_console = args.command.is_some() || args.tail || !should_detach_initial;
 
@@ -51,22 +46,20 @@ fn main() -> anyhow::Result<()> {
         setup_tracing_logging(&log_file_path, log_level, to_console)?;
     }
 
-
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .unwrap();
 
     let result = rt.block_on(async {
-
-
         if let Some(cmd_str) = args.command {
-            return match run_command_and_exit(cmd_str, &log_file_path, log_level, args.timeout).await {
+            return match run_command_and_exit(cmd_str, &log_file_path, log_level, args.timeout)
+                .await
+            {
                 Ok(_) => Ok(()),
                 Err(e) => Err(e),
             };
         }
-
 
         // Removed: debug!("debug"); info!("info"); trace!("trace"); warn!("warn");
 
@@ -80,21 +73,14 @@ fn main() -> anyhow::Result<()> {
             }
         }
 
-
         let service_future = run_service_async();
 
         if should_detach {
             tracing::debug!("Detaching process... Check logs at {:?}", log_file_path); // Changed
 
-            daemonize(
-                &log_file_path,
-                log_level,
-                args.timeout,
-                service_future,
-            )?;
+            daemonize(&log_file_path, log_level, args.timeout, service_future)?;
             Ok(())
         } else {
-
             tracing::debug!("Service started. PID: {}", std::process::id()); // Changed
 
             // Run the async service directly, respecting timeout if present
