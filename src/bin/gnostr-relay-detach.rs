@@ -91,7 +91,7 @@ fn main() -> anyhow::Result<()> {
     let result = rt.block_on(async {
 
 
-            return match run_command_and_exit(String::from("gnostr-relay"), &log_file_path, log_level, args.timeout).await {
+            return match run_command_and_exit(String::from("gnostr-relay -l trace"), &log_file_path, log_level, args.timeout).await {
                 Ok(_) => Ok(()),
                 Err(e) => Err(e),
             };
