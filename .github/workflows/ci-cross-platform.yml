@@ -46,10 +46,10 @@ jobs:
         grep "Timeout reached" test_tail.log
       if: runner.os != 'Windows'
 
-    - name: Run command-line tests (Tailing with Timeout)
+    - name: Run help command
       shell: bash
       run: |
-        cargo run -- --help
+        cargo run -- --help | grep "A detached Rust background service"
 
     - name: Run command-line tests (Tailing with Timeout)
       shell: bash
