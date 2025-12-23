@@ -1,11 +1,11 @@
 use anyhow;
 use clap::Parser;
-use tracing::{info, warn, debug, trace}; // Replaced log imports
+ // Replaced log imports
 
 // New tracing imports
-use tracing_subscriber::{self, prelude::*, fmt::writer::MakeWriterExt, filter::{EnvFilter, LevelFilter}};
+use tracing_subscriber::{self, prelude::*, fmt::writer::MakeWriterExt};
 use tracing_log::LogTracer;
-use tracing_core::Level as TracingCoreLevel; // Or just use tracing::Level if it compiles
+ // Or just use tracing::Level if it compiles
 
 
 // A wrapper for initializing tracing-subscriber (Robust version)
