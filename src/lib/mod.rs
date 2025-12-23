@@ -57,10 +57,10 @@
 //! Note: On non-Unix systems, daemonization is not supported, and `--detach` will be ignored.
 use anyhow;
 use clap::Parser;
-use log::info;
+use log::{info, warn}; // Added warn for timeout message
 use std::path::PathBuf;
-use std::process::Command;
-use tokio::time::Duration;
+use tokio::process::Command;
+use tokio::time::{timeout, Duration as TokioDuration};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "A detached Rust background service")]
@@ -115,30 +115,58 @@ use std::os::unix::io::AsRawFd;
 /// # Returns
 /// This function does not return `Result` in the traditional sense, as it
 /// explicitly calls `std::process::exit()`. It returns `()` for compilation.
-pub fn run_command_and_exit(
+pub async fn run_command_and_exit(
     cmd_str: String,
     log_file_path: &PathBuf,
     log_level: log::LevelFilter,
+    timeout_seconds: Option<u64>,
 ) -> anyhow::Result<()> {
     // Setup logging for the command execution (always to console for immediate feedback)
     setup_logging(log_file_path, log_level, true)?;
 
     info!("Executing command: \"{}\"", cmd_str);
 
-    let status = Command::new("sh") // Use sh to allow complex commands
+    let mut command = Command::new("sh") // Use sh to allow complex commands
         .arg("-c")
         .arg(&cmd_str)
-        .status()?; // Execute and wait for status
+        .spawn()?; // Use spawn instead of status directly
 
-    if status.success() {
-        info!("Command executed successfully.");
-        std::process::exit(0); // Exit with success
+    let status_result = if let Some(seconds) = timeout_seconds {
+        info!("Command will timeout after {} seconds.", seconds);
+        match timeout(TokioDuration::from_secs(seconds), command.wait()).await {
+            Ok(Ok(status)) => Ok(status), // Command completed within timeout
+            Ok(Err(e)) => Err(anyhow::anyhow!("Failed to wait for command: {}", e)), // Error waiting for command
+                        Err(_elapsed) => { // Timeout occurred
+                warn!(
+                    "Command timed out after {} seconds. Killing process.",
+                    seconds
+                );
+                command.kill().await?; // Kill the process
+                command.wait().await?; // Wait for it to be killed
+                return Err(anyhow::anyhow!("Command timed out.")); // Indicate timeout as an error
+            }
+        }
     } else {
-        // Log the error and exit with the command's exit code
-        let exit_code = status.code().unwrap_or(1);
-        eprintln!("Command failed with exit code: {}", exit_code);
-        std::process::exit(exit_code);
-    }
+        Ok(command.wait().await?)
+    };
+
+        let status_result_unwrapped = status_result?;
+
+    
+
+        if status_result_unwrapped.success() {
+
+            info!("Command executed successfully.");
+
+            Ok(())
+
+        } else {
+
+            let exit_code = status_result_unwrapped.code().unwrap_or(1);
+
+            Err(anyhow::anyhow!("Command failed with exit code: {}", exit_code))
+
+        }
 }
 
 /// Performs the double-fork routine to completely detach a process from its controlling terminal.
@@ -270,7 +298,7 @@ where
     rt.block_on(async {
         use log::{debug, info, trace, warn};
         use tokio::time::sleep;
-        use std::time::Duration;
+
 
         debug!("Daemon process started. PID: {}", std::process::id());
         trace!("Daemon process started. PID: {}", std::process::id());
@@ -282,7 +310,7 @@ where
                 _ = service_future => {
                     debug!("Service future finished before timeout.");
                 }
-                _ = sleep(Duration::from_secs(timeout_seconds)) => {
+                _ = sleep(TokioDuration::from_secs(timeout_seconds)) => { // Use TokioDuration here
                     debug!("Timeout reached after {} seconds. Terminating service.", timeout_seconds);
                 }
             }
@@ -380,7 +408,7 @@ pub async fn run_service_async() -> anyhow::Result<()> {
     let mut count = 0;
     loop {
         debug!("Service heartbeat #{}", count);
-        tokio::time::sleep(Duration::from_secs(10)).await;
+        tokio::time::sleep(TokioDuration::from_secs(10)).await;
         count += 1;
 
         if count > 100 {
