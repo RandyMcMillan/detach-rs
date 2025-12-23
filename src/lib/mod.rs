@@ -61,6 +61,7 @@ use log::{info, warn};
 use std::path::PathBuf;
 use tokio::process::Command;
 use tokio::time::{timeout, Duration as TokioDuration};
+#[cfg(unix)]
 use libc::{kill, SIGINT};
 
 
@@ -139,21 +140,32 @@ pub async fn run_command_and_exit(
             Ok(Err(e)) => Err(anyhow::anyhow!("Failed to wait for command: {}", e)), // Error waiting for command
                         Err(_elapsed) => { // Timeout occurred
                 warn!(
-                    "Command timed out after {} seconds. Attempting graceful shutdown (SIGINT).",
+                    "Command timed out after {} seconds. Killing process.",
                     seconds
                 );
-                let pid = command.id().expect("Failed to get child process ID");
-                unsafe {
-                    kill(pid as i32, SIGINT);
+                #[cfg(unix)]
+                {
+                    warn!(
+                        "Command timed out after {} seconds. Attempting graceful shutdown (SIGINT).",
+                        seconds
+                    );
+                    let pid = command.id().expect("Failed to get child process ID");
+                    unsafe {
+                        kill(pid as i32, SIGINT);
+                    }
+
+                    // Give the process a short grace period to shut down gracefully
+                    tokio::time::sleep(TokioDuration::from_millis(2000)).await;
+
+                    // Check if the command is still running
+                    if command.try_wait()?.is_none() {
+                        warn!("Process did not exit after SIGINT. Sending SIGKILL.");
+                        command.kill().await?; // Force kill
+                    }
                 }
-
-                // Give the process a short grace period to shut down gracefully
-                tokio::time::sleep(TokioDuration::from_millis(2000)).await;
-
-                // Check if the command is still running
-                if command.try_wait()?.is_none() {
-                    warn!("Process did not exit after SIGINT. Sending SIGKILL.");
-                    command.kill().await?; // Force kill
+                #[cfg(not(unix))]
+                {
+                    command.kill().await?; // Kill the process
                 }
                 command.wait().await?; // Wait for it to be killed or exit
                 return Err(anyhow::anyhow!("Command timed out.")); // Indicate timeout as an error
