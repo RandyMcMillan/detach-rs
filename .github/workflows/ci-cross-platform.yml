@@ -99,6 +99,14 @@ jobs:
         findstr "Command timed out after 2 seconds." test_cmd_timeout.log
       if: runner.os == 'Windows'
 
+    - name: Test --detach with timeout (Unix)
+      shell: bash
+      run: |
+        ./target/release/detach-rs --log-file test_daemonize_timeout.log --timeout 10 --detach &
+        sleep 12
+        grep "Timeout reached after 10 seconds. Terminating service." test_daemonize_timeout.log
+      if: runner.os != 'Windows'
+
 
 
 

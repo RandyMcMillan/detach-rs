@@ -314,13 +314,19 @@ pub fn setup_logging(
 /// - `Err(anyhow::Error)`: If an error occurs during its execution.
 pub async fn run_service_async() -> anyhow::Result<()> {
     use log::debug;
+    use std::env; // Import std::env
     let mut count = 0;
+    let max_heartbeats = env::var("DETACH_TEST_HEARTBEATS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(100); // Default to 100 if env var not set or invalid
+
     loop {
         debug!("Service heartbeat #{}", count);
         tokio::time::sleep(TokioDuration::from_secs(10)).await;
         count += 1;
 
-        if count > 100 {
+        if count >= max_heartbeats { // Changed to >= for clarity, though > 100 also works
             break;
         }
         debug!("count: {}", count);
