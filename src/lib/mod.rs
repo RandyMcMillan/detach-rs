@@ -64,7 +64,7 @@ use tokio::time::Duration;
 #[command(author, version, about = "A detached Rust background service")]
 pub struct Args {
     /// Run the process in the background
-    #[arg(long, default_value_t = true)]
+    #[arg(long, default_value_t = false)]
     pub detach: bool,
 
     /// Run the process in the foreground (disable detachment)
@@ -86,7 +86,7 @@ pub struct Args {
 
     /// Set the logging level (e.g., "error", "warn", "info", "debug", "trace")
     #[arg(long, short, value_name = "LEVEL", value_enum)]
-    pub logging: Option<log::LevelFilter>, // Use log::LevelFilter from the log crate
+    pub logging: Option<log::LevelFilter>,
 }
 
 #[cfg(unix)]
