@@ -130,8 +130,8 @@ pub async fn run_command_and_exit(
 
 #[cfg(unix)]
 pub fn daemonize<F>(
-    _log_path: &PathBuf, // Marked as unused
-    _level: log::LevelFilter, // Marked as unused
+    log_path: &PathBuf,
+    level: log::LevelFilter,
     timeout: Option<u64>,
     service_future: F,
 ) -> Result<(), anyhow::Error>
@@ -171,6 +171,8 @@ where
         dup2(fd, STDIN_FILENO);
         dup2(fd, STDOUT_FILENO);
         dup2(fd, STDERR_FILENO);
+        // Re-initialize logging in the daemonized child process
+        setup_logging(log_path, level, false)?;
     }
 
     // IMPORTANT: Re-initialize tokio runtime AFTER daemonization
