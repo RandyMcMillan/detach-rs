@@ -290,7 +290,7 @@ jobs:
     - name: Test --logging trace --command "gnostr-relay" (Unix)
       shell: bash
       run: |
-        ./target/release/detach-rs --log-file gnostr-relay.log --logging Warn --command "gnostr-relay" --timeout 10
+        ./target/release/gnostr-relay-detach --log-file gnostr-relay.log --logging Warn --command "gnostr-relay" --timeout 10
         ! grep -q "Executing command: \"gnostr-relay\"" gnostr-relay.log # Info message should NOT be present
         grep "Command timed out after 10 seconds. Attempting graceful shutdown (SIGINT)." gnostr-relay.log # Warn message SHOULD be present
         grep "Command timed out after 10 seconds." gnostr-relay.log # Info message should be present
