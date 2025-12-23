@@ -13,26 +13,29 @@ pub fn setup_tracing_logging(
     level: log::LevelFilter,
     to_console: bool,
 ) -> anyhow::Result<()> {
-    // Convert log::LevelFilter to log::Level, then to tracing::Level
-    let converted_log_level = level.to_level().unwrap_or(log::Level::Info);
-    let converted_tracing_level = map_log_level_to_tracing_level(converted_log_level);
-
     let file = std::fs::File::create(path)?;
     let file_appender = tracing_subscriber::fmt::layer()
         .with_ansi(false)
         .with_writer(file);
 
+    let tracing_level_filter = match level {
+        log::LevelFilter::Off => tracing_subscriber::filter::LevelFilter::OFF,
+        log::LevelFilter::Error => tracing_subscriber::filter::LevelFilter::ERROR,
+        log::LevelFilter::Warn => tracing_subscriber::filter::LevelFilter::WARN,
+        log::LevelFilter::Info => tracing_subscriber::filter::LevelFilter::INFO,
+        log::LevelFilter::Debug => tracing_subscriber::filter::LevelFilter::DEBUG,
+        log::LevelFilter::Trace => tracing_subscriber::filter::LevelFilter::TRACE,
+    };
+
     let filter = tracing_subscriber::filter::EnvFilter::builder()
-        .with_default_directive(
-            tracing_subscriber::filter::LevelFilter::from_level(converted_tracing_level).into(),
-        )
-        .from_env_lossy(); // Removed .build()?
+        .with_default_directive(tracing_level_filter.into())
+        .from_env_lossy();
 
     // Initialize the registry based on to_console
     let init_result = if to_console {
         let console_appender = tracing_subscriber::fmt::layer()
             .with_ansi(true)
-            .with_writer(std::io::stdout.with_max_level(converted_tracing_level));
+            .with_writer(std::io::stdout.with_max_level(tracing_level_filter.into_level().unwrap_or(tracing::Level::ERROR)));
         tracing_subscriber::registry()
             .with(file_appender)
             .with(console_appender)
@@ -62,17 +65,7 @@ pub fn setup_tracing_logging(
     Ok(())
 }
 
-// Helper function to map log::Level to tracing::Level
-fn map_log_level_to_tracing_level(level: log::Level) -> tracing::Level {
-    // Explicitly use tracing::Level here
-    match level {
-        log::Level::Error => tracing::Level::ERROR,
-        log::Level::Warn => tracing::Level::WARN,
-        log::Level::Info => tracing::Level::INFO,
-        log::Level::Debug => tracing::Level::DEBUG,
-        log::Level::Trace => tracing::Level::TRACE,
-    }
-}
+
 #[cfg(unix)]
 use libc::{SIGINT, kill};
 use std::path::PathBuf;
