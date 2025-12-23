@@ -51,6 +51,21 @@ jobs:
       run: |
         cargo run -- --help | grep "A detached Rust background service"
 
+    - name: Run short help command
+      shell: bash
+      run: |
+        cargo run -- -h | grep "A detached Rust background service"
+
+    - name: Run version command
+      shell: bash
+      run: |
+        cargo run -- --version | grep "detach 0.0.1"
+
+    - name: Run short version command
+      shell: bash
+      run: |
+        cargo run -- -V | grep "detach 0.0.1"
+
     - name: Run command-line tests (Tailing with Timeout)
       shell: bash
       run: |
