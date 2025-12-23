@@ -1,8 +1,10 @@
 #![allow(unused)]
-use clap::{Parser, ValueEnum};
+
 #[cfg(unix)]
+use clap::{Parser, ValueEnum};
 use libc::{STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, dup2, fork, setsid};
-use log::{LevelFilter, info};
+use log::LevelFilter;
+use log::info;
 use std::fs::File as StdFile; // Rename to avoid conflict with tokio::fs::File
 #[cfg(unix)]
 use std::os::unix::io::AsRawFd;
@@ -10,37 +12,9 @@ use std::path::PathBuf;
 use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
+use detach::Args;
 use detach::daemonize;
 use detach::run_service_async;
-
-#[derive(Parser, Debug)]
-#[command(author, version, about = "A detached Rust background service")]
-struct Args {
-    /// Run the process in the background
-    #[arg(long, default_value_t = true)]
-    detach: bool,
-
-    /// Run the process in the foreground (disable detachment)
-    #[arg(long = "no-detach")]
-    no_detach: bool,
-
-    /// tail logging
-    #[arg(long, default_value_t = false)]
-    tail: bool,
-
-    /// Path to the log file
-    //TODO handle canonical relative path
-    #[arg(long, default_value = "./detach.log")]
-    log_file: PathBuf,
-
-    /// Timeout after a specified number of seconds
-    #[arg(long, short, value_name = "SECONDS")]
-    timeout: Option<u64>,
-
-    /// Set the logging level (e.g., "error", "warn", "info", "debug", "trace")
-    #[arg(long, short, value_name = "LEVEL", value_enum)]
-    logging: Option<LevelFilter>,
-}
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
