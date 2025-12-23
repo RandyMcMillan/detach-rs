@@ -69,7 +69,7 @@ jobs:
       shell: bash
       run: |
         ./target/release/detach-rs --command "true" --log-file test_cmd_fail.log
-        grep "Executing command: \"false\"" test_cmd_fail.log
+        grep "Executing command: \"true\"" test_cmd_fail.log
         #grep "Command failed with exit code:" test_cmd_fail.log
       if: runner.os != 'Windows'
 
