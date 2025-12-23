@@ -31,6 +31,7 @@ jobs:
       run: cargo test --verbose
 
     - name: Run command-line tests (Non-daemonizing)
+      shell: bash
       run: |
         ./target/release/detach-rs --no-detach --log-file test_no_detach.log --timeout 5 & \
         sleep 7 &&
@@ -38,6 +39,7 @@ jobs:
       if: runner.os != 'Windows'
 
     - name: Run command-line tests (Non-daemonizing)
+      shell: bash
       run: |
         .\target\release\detach-rs.exe --no-detach --log-file test_no_detach.log --timeout 5 & \
         timeout /T 7 /NOBREAK >nul # Give it time to timeout
@@ -45,6 +47,7 @@ jobs:
       if: runner.os == 'Windows'
 
     - name: Run command-line tests (Tailing with Timeout)
+      shell: bash
       run: |
         ./target/release/detach-rs --tail --log-file test_tail.log --timeout 10 & \
         sleep 12 && true # Give it time to timeout
@@ -52,6 +55,7 @@ jobs:
       if: runner.os != 'Windows'
 
     - name: Run command-line tests (Tailing with Timeout)
+      shell: bash
       run: |
         .\target\release\detach-rs.exe --tail --log-file test_tail.log --timeout 10
         timeout /T 12 /NOBREAK >nul # Give it time to timeout
