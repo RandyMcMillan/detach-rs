@@ -73,7 +73,7 @@ pub struct Args {
     pub no_detach: bool,
 
     /// tail logging
-    #[arg(long, default_value_t = false)]
+    #[arg(long, default_value_t = false, conflicts_with = "detach")]
     pub tail: bool,
 
     /// Path to the log file
