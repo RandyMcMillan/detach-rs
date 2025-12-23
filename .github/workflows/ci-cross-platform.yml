@@ -60,7 +60,7 @@ jobs:
 
     - name: Test daemonization with Timeout (Unix-like)
       run: |
-        ./target/release/detach-rs --log-file test_daemonize.log --timeout 10 --detach &
+        ./target/release/detach-rs --log-file test_daemonize.log --timeout 10 --detach & \
         sleep 12 && true
         grep "Timeout reached" test_daemonize.log
       if: runner.os != 'Windows'
