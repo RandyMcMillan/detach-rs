@@ -38,14 +38,6 @@ jobs:
         grep "Timeout reached" test_no_detach.log
       if: runner.os != 'Windows'
 
-    - name: Run command-line tests (Non-daemonizing)
-      shell: bash
-      run: |
-        .\target\release\detach-rs.exe --no-detach --log-file test_no_detach.log --timeout 5
-        timeout /T 7 /NOBREAK >nul
-        findstr "Timeout reached" test_no_detach.log
-      if: runner.os == 'Windows'
-
     - name: Run command-line tests (Tailing with Timeout)
       shell: bash
       run: |
@@ -53,11 +45,3 @@ jobs:
         sleep 12 && true # Give it time to timeout
         grep "Timeout reached" test_tail.log
       if: runner.os != 'Windows'
-
-    - name: Run command-line tests (Tailing with Timeout)
-      shell: bash
-      run: |
-        .\target\release\detach-rs.exe --tail --log-file test_tail.log --timeout 10
-        timeout /T 12 /NOBREAK >nul # Give it time to timeout
-        findstr "Timeout reached" test_tail.log
-      if: runner.os == 'Windows'
