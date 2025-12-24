@@ -169,7 +169,7 @@ jobs:
       - name: cargo clean
         shell: bash
         run: |
-          cpan install Locale::Maketext::Simple
+          cpan install Locale::Maketext::Simple || true
           cargo install cargo-binstall -j8 || cargo binstall cargo-binstall -f || true
 
       - run: |
