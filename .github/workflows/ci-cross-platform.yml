@@ -29,6 +29,23 @@ jobs:
       fail-fast: false
     runs-on: ${{ matrix.os }}
     steps:
+      - uses: actions/checkout@v3
+      - name: Cache Cargo registry and Git dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-registry-git-${{ runner.os }}-${{ matrix.toolchain }}-${{ hashFiles('Cargo.lock') }}
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.toolchain }}
+      - name: Cache Cargo build target
+        uses: actions/cache@v3
+        with:
+          path: target
+          key: cargo-build-target-${{ runner.os }}-${{ matrix.toolchain }}-${{ hashFiles('Cargo.lock') }}
 
       - name: Run sccache-cache only on non-release runs
         if: github.event_name != 'release' && github.event_name != 'workflow_dispatch'
