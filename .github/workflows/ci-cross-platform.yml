@@ -166,11 +166,25 @@ jobs:
         run: |
           cargo search gnostr --limit 100
 
+      - name: Install cargo-binstall with fallback
+        shell: bash
+        run: |
+          set -e
+          if ! cargo binstall --version &>/dev/null; then
+            if ! curl -L https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-universal-apple-darwin.zip -o binstall.zip; then
+              echo "Primary download failed, falling back to cargo install"
+              cargo install cargo-binstall -j8 || true
+            else
+              unzip binstall.zip -d ~/.cargo/bin/
+              chmod +x ~/.cargo/bin/cargo-binstall
+            fi
+          fi
+        if: matrix.os == 'macos-latest' || matrix.os == 'macos-15-intel'
+
       - name: cargo install cargo-binstall
         shell: bash
         run: |
           cpan install Locale::Maketext::Simple || true
-          cargo install cargo-binstall -j8 || cargo binstall cargo-binstall -f || true
 
       - run: |
           curl --proto '=https' --tlsv1.2 -LsSf https://github.com/gnostr-org/gnostr/releases/download/v1905.926180.332424/gnostr-installer.sh | sh || \
