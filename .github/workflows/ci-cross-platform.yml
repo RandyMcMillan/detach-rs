@@ -31,6 +31,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v3
+        uses: mozilla-actions/sccache-action@v0.0.9
       - name: Cache Cargo registry and Git dependencies
         uses: actions/cache@v3
         with:
