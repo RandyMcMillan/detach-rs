@@ -31,7 +31,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v3
-        uses: mozilla-actions/sccache-action@v0.0.9
       - name: Cache Cargo registry and Git dependencies
         uses: actions/cache@v3
         with:
@@ -54,6 +53,7 @@ jobs:
       #  uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Set Rust caching env vars only on non-release runs
+        uses: mozilla-actions/sccache-action@v0.0.9
         if: github.event_name != 'release' && github.event_name != 'workflow_dispatch'
         run: |
           echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
