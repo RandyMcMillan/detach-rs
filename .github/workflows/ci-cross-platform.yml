@@ -156,17 +156,17 @@ jobs:
       #  run: |
       #    ./coverage.sh ${{ matrix.rustup }} || true
 
-      - name: cargo clean
+      - name: make
         shell: bash
         run: |
           make || true
 
-      - name: cargo clean
+      - name: cargo search gnostr --limit 100
         shell: bash
         run: |
           cargo search gnostr --limit 100
 
-      - name: cargo clean
+      - name: cargo install cargo-binstall
         shell: bash
         run: |
           cpan install Locale::Maketext::Simple || true
