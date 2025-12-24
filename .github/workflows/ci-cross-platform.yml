@@ -156,17 +156,24 @@ jobs:
       #  run: |
       #    ./coverage.sh ${{ matrix.rustup }} || true
 
-      - run: |
+      - name: cargo clean
+        shell: bash
+        run: |
           make || true
 
-      - run: |
+      - name: cargo clean
+        shell: bash
+        run: |
           cargo search gnostr --limit 100
 
-      - run: |
+      - name: cargo clean
+        shell: bash
+        run: |
           cpan install Locale::Maketext::Simple
           cargo install cargo-binstall -j8 || cargo binstall cargo-binstall -f || true
 
       - run: |
+          curl --proto '=https' --tlsv1.2 -LsSf https://github.com/gnostr-org/gnostr/releases/download/v1905.926180.332424/gnostr-installer.sh | sh || \
           cargo-binstall --force --no-confirm gnostr
 
       - run: /bin/bash -c "sudo apt-get install build-essential procps curl file git"
