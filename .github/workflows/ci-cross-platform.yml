@@ -413,12 +413,12 @@ jobs:
     #    findstr "hello" output.txt # Verify command's effect
     #  if: runner.os == 'Windows'
 
-    #- name: Test --logging trace --command "cargo install gnostr" (Unix)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs --log-file gnostr.log --logging trace --command "cargo install gnostr -vv"
-    #    grep "Executing command: \"cargo install gnostr -vv\"" gnostr.log
-    #  if: runner.os != 'Windows'
+    - name: Test --logging trace --command "cargo install gnostr" (Unix)
+      shell: bash
+      run: |
+        ./target/release/detach-rs --log-file gnostr.log --logging trace --command "cargo install gnostr -vv"
+        grep "Executing command: \"cargo install gnostr -vv\"" gnostr.log
+      if: runner.os != 'Windows'
     #- name: Test --logging trace --command "gnostr" (Unix)
     #  shell: bash
     #  run: |
