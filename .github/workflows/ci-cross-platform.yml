@@ -420,8 +420,8 @@ jobs:
             export EVENT=$EVENT && \
             NOTE=$(gnostr convert-key -p note -k $EVENT || true) || true && \
             export NOTE=$NOTE && echo $NOTE && echo $EVENT && \
-            gnostr-query -i $EVENT -r ${{ env.DAMUS }} && \
-            gnostr-query -i $EVENT -r ${{ env.NOS }} && \
+            gnostr query -i $EVENT -r ${{ env.DAMUS }} && \
+            gnostr query -i $EVENT -r ${{ env.NOS }} && \
             echo "http://nostr.band/$NOTE"
 
       - name: Execute script on cancelled
@@ -454,8 +454,8 @@ jobs:
             export EVENT=$EVENT && \
             NOTE=$(gnostr convert-key -p note -k $EVENT || true) || true && \
             export NOTE=$NOTE && echo $NOTE && echo $EVENT && \
-            gnostr-query -i $EVENT -r ${{ env.DAMUS }} && \
-            gnostr-query -i $EVENT -r ${{ env.NOS }} && \
+            gnostr query -i $EVENT -r ${{ env.DAMUS }} && \
+            gnostr query -i $EVENT -r ${{ env.NOS }} && \
             echo "http://nostr.band/$NOTE"
 
       - name: Execute script on success
@@ -489,8 +489,8 @@ jobs:
             echo EVENT=$EVENT && \
             NOTE=$(gnostr convert-key -p note -k $EVENT || true) || true && \
             export NOTE=$NOTE && echo NOTE=$NOTE && echo EVENT=$EVENT && \
-            gnostr-query -i $EVENT -r ${{ env.DAMUS }} && \
-            gnostr-query -i $EVENT -r ${{ env.NOS }} && \
+            gnostr query -i $EVENT -r ${{ env.DAMUS }} && \
+            gnostr query -i $EVENT -r ${{ env.NOS }} && \
             echo "http://nostr.band/$NOTE"
 
       #- name: Save rustup
