@@ -443,11 +443,11 @@ jobs:
     #    grep "Command timed out after 10 seconds. Attempting graceful shutdown (SIGINT)." gnostr-relay.log
     #    grep "Command timed out after 10 seconds." gnostr-relay.log
     #  if: runner.os != 'Windows'
-    #- name: Test --logging info --command "gnostr" (Unix)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs --log-file gnostr.log --logging info --command "gnostr" --timeout 10
-    #    grep "Executing command: \"gnostr\"" gnostr.log
-    #    grep "Command timed out after 10 seconds. Attempting graceful shutdown (SIGINT)." gnostr.log
-    #    grep "Command timed out after 10 seconds." gnostr.log
-    #  if: runner.os != 'Windows'
+    - name: Test --logging info --command "gnostr" (Unix)
+      shell: bash
+      run: |
+        ./target/release/detach-rs --log-file gnostr.log --logging info --command "gnostr" --timeout 10
+        grep "Executing command: \"gnostr\"" gnostr.log
+        grep "Command timed out after 10 seconds. Attempting graceful shutdown (SIGINT)." gnostr.log
+        grep "Command timed out after 10 seconds." gnostr.log
+      if: runner.os != 'Windows'
