@@ -1,453 +1,496 @@
-name: Cross-Platform CI
+name: gnostr-bot-matrix
 
+# Controls when the action will run.
 on:
+  schedule:
+    - cron: '*/30 * * * *' # run 30th minute
   push:
-    branches: [ "**" ]
-  pull_request:
-    branches: [ "main" ]
+    branches:
+      - '**'
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: read
 
-env:
-  CARGO_TERM_COLOR: always
-
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
-  build:
-    runs-on: ${{ matrix.os }}
+  gnostr-bot:
+    env:
+      FORCE: "--force"
+      GNOSTR: "gnostr"
+      POW: "16"
+      DAMUS: "wss://relay.damus.io"
+      NOS: "wss://nos.lol"
     strategy:
-      fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        toolchain: [stable, nightly]
-
+        os: [macos-latest, ubuntu-latest, windows-latest]
+        rustup: [stable, nightly]
+        #commands: [""]  # , "sniper", "chat", "legit", "ngit", "set-metadata", "note"]
+      fail-fast: false
+    runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v3
-    - name: Cache Cargo registry and Git dependencies
-      uses: actions/cache@v3
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-        key: cargo-registry-git-${{ runner.os }}-${{ matrix.toolchain }}-${{ hashFiles('Cargo.lock') }}
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        toolchain: ${{ matrix.toolchain }}
-    - name: Cache Cargo build target
-      uses: actions/cache@v3
-      with:
-        path: target
-        key: cargo-build-target-${{ runner.os }}-${{ matrix.toolchain }}-${{ hashFiles('Cargo.lock') }}
-    - name: Build
-      run: cargo build --verbose
-    - name: Build Release
-      run: cargo build --verbose --release
-    - name: Run tests
-      run: cargo test --verbose
 
-    - name: Run help command (--help)
-      shell: bash
-      run: |
-        cargo run --bin detach-rs -- --help | grep "A detached Rust background service"
+      - name: Run sccache-cache only on non-release runs
+        if: github.event_name != 'release' && github.event_name != 'workflow_dispatch'
+        uses: mozilla-actions/sccache-action@v0.0.9
 
-    - name: Run short help command (-h)
-      shell: bash
-      run: |
-        cargo run --bin detach-rs -- -h | grep "A detached Rust background service"
+      - name: Set Rust caching env vars only on non-release runs
+        if: github.event_name != 'release' && github.event_name != 'workflow_dispatch'
+        run: |
+          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+          # echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
 
-    - name: Run version command (--version)
-      shell: bash
-      run: |
-        cargo run --bin detach-rs -- --version | grep "detach 0.0.1"
+      - name: Calculate Odd/Even Status
+        shell: bash
+        id: time_check_hour
+        run: |
+          # Alternate tasks on cron runs to balance testing depth and speed.
+          # Get the current hour (0-23) in UTC
+          CURRENT_HOUR=$(date -u +%H)
+          echo "Current UTC Hour is $CURRENT_HOUR"
 
-    - name: Run short version command
-      shell: bash
-      run: |
-        cargo run --bin detach-rs -- -V | grep "detach 0.0.1"
+          # Use a shell arithmetic expression to check for evenness (remainder of division by 2 is 0)
+          # '0' is even, '1' is odd.
+          if (( CURRENT_HOUR % 2 == 0 )); then
+            IS_EVEN="true"
+            STATUS="EVEN"
+          else
+            IS_EVEN="false"
+            STATUS="ODD"
+          fi
 
-    #- name: Test --no-detach with timeout (Unix)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs --no-detach --log-file test_no_detach_timeout.log --timeout 5
-    #    grep "Timeout reached after 5 seconds. Terminating service." test_no_detach_timeout.log
-    #  if: runner.os != 'Windows'
+          echo "The hour is $STATUS"
 
-    #- name: Test --no-detach with command (Windows)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs.exe --no-detach --log-file test_no_detach_cmd_success.log --command "echo hello"
-    #    findstr "Executing command: \"echo hello\"" test_no_detach_cmd_success.log
-    #    findstr "Command executed successfully." test_no_detach_cmd_success.log
-    #  if: runner.os == 'Windows'
+          # Set a boolean output for the subsequent steps to consume
+          echo "is_even=$IS_EVEN" >> $GITHUB_OUTPUT
 
-    #- name: Test --command that passes (Unix)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs --command "true" --log-file test_cmd_fail.log
-    #    grep "Executing command: \"true\"" test_cmd_fail.log
-    #    #grep "Command failed with exit code:" test_cmd_fail.log
-    #  if: runner.os != 'Windows'
+      - name: Use Bash for all subsequent steps
+        shell: bash
+        run: |
+          echo GNOSTR=${{ env.GNOSTR }}
+          echo MEMPOOL=${{ env.MEMPOOL }}
+          echo POW=${{ env.POW }}
+          echo DAMUS=${{ env.DAMUS }}
+          echo NOS=${{ env.NOS }}
+        env:
+          MEMPOOL: "mempool"
+          MEMPOOL_SPACE: "mempool-space"
 
-    #- name: Test --command that passes (Windows)
-    #  shell: bash
-    #  run: |
-    #    # Use `cmd /c exit 1` for a failing command on Windows
-    #    ./target/release/detach-rs.exe --command "cmd /c exit 0" --log-file test_cmd_fail.log
-    #    findstr "Executing command: \"cmd /c exit 0\"" test_cmd_fail.log
-    #    #findstr "Command failed with exit code:" test_cmd_fail.log
-    #  if: runner.os == 'Windows'
+      - uses: cargo-bins/cargo-binstall@main
+      - uses: styfle/cancel-workflow-action@0.11.0
+        if: ${{ !env.ACT }}
+        with:
+          access_token: ${{ github.token }}
 
-    #- name: Test --command with timeout (Unix)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs --command "sleep 5" --timeout 2 --log-file test_cmd_timeout.log
-    #    grep "Executing command: \"sleep 5\"" test_cmd_timeout.log
-    #    grep "Command timed out after 2 seconds." test_cmd_timeout.log
-    #  if: runner.os != 'Windows'
+      ##- name: Restore rustup
+      ##  id: cache-rustup-restore
+      ##  uses: actions/cache/restore@v3
+      ##  if: ${{ !env.ACT }}
+      ##  with:
+      ##    path: |
+      ##      ~/.rustup
+      ##    key: ${{ runner.os }}-rustup-${{ matrix.rustup }}
 
-    #- name: Test --command with timeout (Windows)
-    #  shell: bash
-    #  run: |
-    #    # Use Windows `timeout` command, but `detach-rs`'s internal timeout should trigger first
-    #    ./target/release/detach-rs.exe --command "timeout /T 5 /NOBREAK >nul" --timeout 2 --log-file test_cmd_timeout.log
-    #    findstr "Executing command: \"timeout /T 5 /NOBREAK >nul\"" test_cmd_timeout.log
-    #    findstr "Command timed out after 2 seconds." test_cmd_timeout.log
-    #  if: runner.os == 'Windows'
+      ##- name: Restore cargo
+      ##  id: cache-cargo-restore
+      ##  uses: actions/cache/restore@v3
+      ##  if: ${{ !env.ACT }}
+      ##  with:
+      ##    path: |
+      ##      ~/.cargo
+      ##    key: ${{ runner.os }}-cargo-${{ matrix.rustup }}
 
-    #- name: Test --detach with timeout (Unix)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs --log-file test_daemonize_timeout.log --timeout 10 --detach
-    #    sleep 12
-    #    grep "Timeout reached after 10 seconds. Terminating service." test_daemonize_timeout.log
-    #  if: runner.os != 'Windows'
+      ##- name: Install Rust toolchain
+      ##  uses: actions-rust-lang/setup-rust-toolchain@v1
+      ##  with:
+      ##    toolchain: ${{ matrix.rustup }}
+      ##    # components: rustfmt, clippy
+      ##    # targets: wasm32-unknown-unknown
 
-    #- name: Test --detach successful daemonization (Unix)
-    #  shell: bash
-    #  env:
-    #    DETACH_TEST_HEARTBEATS: 2
-    #  run: |
-    #    ./target/release/detach-rs --log-file test_daemonize_success.log --detach
-    #    sleep 22 # Give the daemonized process time to start and complete (2 heartbeats * 10s = 20s)
-    #    grep "Daemon process started." test_daemonize_success.log
-    #    grep "Service shutting down." test_daemonize_success.log
-    #  if: runner.os != 'Windows'
 
-    #- name: Test --detach with command (Unix)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs --log-file test_daemonize_cmd.log --detach --command "echo hello" &
-    #    sleep 5
-    #    grep "Daemon process started." test_daemonize_cmd.log
-    #    grep "Executing command: \"echo hello\"" test_daemonize_cmd.log
-    #    grep "Command executed successfully." test_daemonize_cmd.log
-    #  if: runner.os != 'Windows'
+      - run: |
+          rustup default ${{ matrix.rustup }}
 
-    #- name: Test --tail with timeout (Unix)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs --tail --log-file test_tail_timeout.log --timeout 5 > console_output_tail.log 2>&1
-    #    grep "Timeout reached after 5 seconds. Terminating service." console_output_tail.log
-    #    grep "Timeout reached after 5 seconds. Terminating service." test_tail_timeout.log # Also check log file
-    #  if: runner.os != 'Windows'
+      #- name: Restore target
+      #  if: ${{ !env.ACT }}
+      #  id: cache-target-restore
+      #  uses: actions/cache/restore@v3
+      #  with:
+      #    path: |
+      #      target
+      #    key: ${{ runner.os }}-target-${{ matrix.rustup }}
 
-    #- name: Test --tail with timeout (Windows)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs.exe --tail --log-file test_tail_timeout.log --timeout 5 > console_output_tail.log 2>&1
-    #    findstr "Timeout reached after 5 seconds. Terminating service." console_output_tail.log
-    #    findstr "Timeout reached after 5 seconds. Terminating service." test_tail_timeout.log # Also check log file
-    #  if: runner.os == 'Windows'
+      - uses: actions/checkout@v4
+        with:
+          #submodules: 'true'
+          set-safe-directory: 'true'
+          fetch-depth: '0'
+          #fetch-tags: 'false'
 
-    #- name: Test --tail with command success (Unix)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs --tail --log-file test_tail_cmd_success.log --command "echo hello" > console_output_tail_cmd.log 2>&1
-    #    grep "Executing command: \"echo hello\"" console_output_tail_cmd.log
-    #    grep "Command executed successfully." console_output_tail_cmd.log
-    #    grep "Executing command: \"echo hello\"" test_tail_cmd_success.log
-    #    grep "Command executed successfully." test_tail_cmd_success.log
-    #  if: runner.os != 'Windows'
+      - name: cargo clean
+        shell: bash
+        run: |
+          cargo clean || true
+          printenv || true
 
-    #- name: Test --tail with command success (Windows)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs.exe --tail --log-file test_tail_cmd_success.log --command "echo hello" > console_output_tail_cmd.log 2>&1
-    #    findstr "Executing command: \"echo hello\"" console_output_tail_cmd.log
-    #    findstr "Command executed successfully." console_output_tail_cmd.log
-    #    findstr "Executing command: \"echo hello\"" test_tail_cmd_success.log
-    #    findstr "Command executed successfully." test_tail_cmd_success.log
-    #  if: runner.os == 'Windows'
+      #- name: coverage.sh
+      #  shell: bash
+      #  run: |
+      #    ./coverage.sh ${{ matrix.rustup }} || true
 
-    #- name: Test --tail without --log-file (Unix)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs --tail --command "echo no_logfile_test" > console_output_no_logfile.log 2>&1
-    #    grep "Executing command: \"echo no_logfile_test\"" console_output_no_logfile.log
-    #    grep "Command executed successfully." console_output_no_logfile.log
-    #    ! test -f detach.log # Ensure default log file is NOT created
-    #  if: runner.os != 'Windows'
+      - run: |
+          make || true
 
-    #- name: Test --tail without --log-file (Windows)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs.exe --tail --command "echo no_logfile_test" > console_output_no_logfile.log 2>&1
-    #    findstr "Executing command: \"echo no_logfile_test\"" console_output_no_logfile.log
-    #    findstr "Command executed successfully." console_output_no_logfile.log
-    #    ! test -f detach.log # Ensure default log file is NOT created
-    #  if: runner.os == 'Windows'
+      - run: |
+          cargo search gnostr --limit 100
 
-    #- name: Test --log-file custom relative path (Unix)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs --no-detach --log-file custom_log.log --command "echo custom log test"
-    #    grep "Command executed successfully." custom_log.log
-    #    test -f custom_log.log # Ensure custom log file is created
-    #  if: runner.os != 'Windows'
+      - run: |
+          cpan install Locale::Maketext::Simple
+          cargo install cargo-binstall -j8 || cargo binstall cargo-binstall -f || true
 
-    #- name: Test --log-file custom relative path (Windows)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs.exe --no-detach --log-file custom_log.log --command "echo custom log test"
-    #    findstr "Command executed successfully." custom_log.log
-    #    test -f custom_log.log # Ensure custom log file is created
-    #  if: runner.os == 'Windows'
+      - run: |
+          cargo-binstall --force --no-confirm gnostr
 
-    #- name: Test --log-file custom absolute path (Unix)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs --no-detach --log-file "$(pwd)/custom_absolute.log" --command "echo custom absolute log test"
-    #    grep "Command executed successfully." "$(pwd)/custom_absolute.log"
-    #    test -f "$(pwd)/custom_absolute.log" # Ensure custom log file is created
-    #  if: runner.os != 'Windows'
+      - run: /bin/bash -c "sudo apt-get install build-essential procps curl file git"
+        if: matrix.os == 'ubuntu-latest'
 
-    #- name: Test --log-file custom absolute path (Windows)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs.exe --no-detach --log-file "$PWD/custom_absolute.log" --command "echo custom absolute log test"
-    #    findstr "Command executed successfully." "$PWD/custom_absolute.log"
-    #    test -f "$PWD/custom_absolute.log" # Ensure custom log file is created
-    #  if: runner.os == 'Windows'
+      #- run: cargo install sccache --force -j8
+      #  if: matrix.os == 'ubuntu-latest' || matrix.os == 'macos-latest'
 
-    #- name: Test --logging Debug (Unix)
-    #  shell: bash
-    #  env:
-    #    DETACH_TEST_HEARTBEATS: 1 # Ensure run_service_async runs at least once
-    #  run: |
-    #    ./target/release/detach-rs --no-detach --log-file test_logging_debug.log --logging Debug
-    #    grep "Service heartbeat #0" test_logging_debug.log
-    #    grep "Service shutting down." test_logging_debug.log
-    #  if: runner.os != 'Windows'
+      #- name: winget install sccache
+      #  shell: bash
+      #  run: |
+      #    winget install Mozilla.sccache --accept-package-agreements --accept-source-agreements
+      #  if: runner.os == 'windows'
 
-    #- name: Test --logging Debug (Windows)
-    #  shell: bash
-    #  env:
-    #    DETACH_TEST_HEARTBEATS: 1
-    #  run: |
-    #    ./target/release/detach-rs.exe --no-detach --log-file test_logging_debug.log --logging Debug
-    #    findstr "Service heartbeat #0" test_logging_debug.log
-    #    findstr "Service shutting down." test_logging_debug.log
-    #  if: runner.os == 'Windows'
 
-    #- name: Test --logging Info (Unix)
-    #  shell: bash
-    #  env:
-    #    DETACH_TEST_HEARTBEATS: 1
-    #  run: |
-    #    ./target/release/detach-rs --no-detach --log-file test_logging_info.log --logging Info
-    #    ! grep -q "Service heartbeat #0" test_logging_info.log # Debug message should NOT be present
-    #    grep "Service shutting down." test_logging_info.log # Info message SHOULD be present
-    #  if: runner.os != 'Windows'
+      - name: brew install
+        run: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        if: runner.os == 'macos'
 
-    #- name: Test --logging Info (Windows)
-    #  shell: bash
-    #  env:
-    #    DETACH_TEST_HEARTBEATS: 1
-    #  run: |
-    #    ./target/release/detach-rs.exe --no-detach --log-file test_logging_info.log --logging Info
-    #    ! findstr /c:"Service heartbeat #0" test_logging_info.log # Debug message should NOT be present
-    #    findstr "Service shutting down." test_logging_info.log # Info message SHOULD be present
-    #  if: runner.os == 'Windows'
+      - name: linuxbrew
+        run: |
+          test -d ~/.linuxbrew && eval "$(~/.linuxbrew/bin/brew shellenv)"
+          test -d /home/linuxbrew/.linuxbrew && eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+          echo "eval \"\$($(brew --prefix)/bin/brew shellenv)\"" >> ~/.bashrc
+          brew install gnostr-org/gnostr-org/gnostr && gnostr --help
+        if: matrix.os == 'ubuntu-latest'
 
-    #- name: Test --logging Warn (Unix)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs --log-file test_logging_warn.log --logging Warn --command "sleep 5" --timeout 2
-    #    ! grep -q "Executing command: \"sleep 5\"" test_logging_warn.log # Info message should NOT be present
-    #    ! grep -q "Service heartbeat #0" test_logging_warn.log # Debug message should NOT be present
-    #    grep "Command timed out after 2 seconds. Attempting graceful shutdown (SIGINT)." test_logging_warn.log # Warn message SHOULD be present
-    #    grep "Command timed out after 2 seconds." test_logging_warn.log # Info message should be present
-    #  if: runner.os != 'Windows'
+      - name: brew tap gnostr-org/homebrew-gnostr-org
+        run: brew tap gnostr-org/homebrew-gnostr-org || true
+        if: runner.os != 'windows'
 
-    #- name: Test --logging Warn (Windows)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs.exe --log-file test_logging_warn.log --logging Warn --command "timeout /T 5 /NOBREAK >nul" --timeout 2
-    #    ! findstr /c:"Executing command: \"timeout /T 5 /NOBREAK >nul\"" test_logging_warn.log # Info message should NOT be present
-    #    ! findstr /c:"Service heartbeat #0" test_logging_warn.log # Debug message should NOT be present
-    #    findstr "Command timed out after 2 seconds. Attempting graceful shutdown" test_logging_warn.log # Warn message SHOULD be present
-    #    findstr "Command timed out after 2 seconds." test_logging_warn.log # Info message should be present
-    #  if: runner.os == 'Windows'
+      - name: brew tap nostorg/nostr
+        run: brew tap nostorg/nostr || true
+        if: runner.os != 'windows'
 
-    #- name: Test --logging Off (Unix)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs --no-detach --log-file test_logging_off.log --logging Off --command "echo hello"
-    #    ! test -s test_logging_off.log # Assert that the log file is empty
-    #  if: runner.os != 'Windows'
+      - name: brew tap randymcmillan/homebrew-randymcmillan
+        run: brew tap randymcmillan/homebrew-randymcmillan || true
+        if: runner.os != 'windows'
 
-    #- name: Test --logging Off (Windows)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs.exe --no-detach --log-file test_logging_off.log --logging Off --command "echo hello"
-    #    ! test -s test_logging_off.log # Assert that the log file is empty
-    #  if: runner.os == 'Windows'
+      - name: brew install gnostr-org/homebrew-gnostr-org/gnostr
+        run: brew install gnostr-org/gnostr-org/gnostr && gnostr --help || true
+        if: runner.os != 'windows'
 
-    #- name: Test --detach (Windows - Daemonization not supported)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs.exe --detach 2>&1 | findstr "Daemonization is not supported on this operating system."
-    #  if: runner.os == 'Windows'
+      - name: brew install cargo-llvm-cov cargo-llvm-lines
+        run: brew install cargo-llvm-cov cargo-llvm-lines || true
+        if: runner.os != 'windows'
 
-    #- name: Test --detach conflict with --tail (Unix)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs --detach --tail 2>&1 | grep -E "error: the argument '--detach' cannot be used with '--tail'|error: the argument '--tail' cannot be used with '--detach'"
-    #  if: runner.os != 'Windows'
+      - name: powershell install gnostr
+        shell: powershell
+        run: powershell -ExecutionPolicy Bypass -c "irm https://github.com/gnostr-org/gnostr/releases/download/v1905.926180.332424/gnostr-installer.ps1 | iex"
+        if: runner.os == 'windows'
 
-    #- name: Test --detach conflict with --tail (Windows)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs.exe --detach --tail 2>&1 | findstr /R "error: the argument '--detach' cannot be used with '--tail' error: the argument '--tail' cannot be used with '--detach'"
-    #  if: runner.os == 'Windows'
 
-    #- name: Test --command conflict with --detach (Unix)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs --command "echo hi" --detach 2>&1 | grep -E "error: the argument '--command' cannot be used with '--detach'|error: the argument '--detach' cannot be used with '--command'"
-    #  if: runner.os != 'Windows'
+      #- name: gnostr ${{ matrix.commands }}
+      #  shell: bash
+      #  run: |
+      #    gnostr ${{ matrix.commands }} -V
+      #    gnostr ${{ matrix.commands }} --version
+      #    gnostr ${{ matrix.commands }} -h
+      #    gnostr ${{ matrix.commands }} --help
 
-    #- name: Test --command conflict with --detach (Windows)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs.exe --command "echo hi" --detach 2>&1 | findstr /R "error: the argument '--command' cannot be used with '--detach' error: the argument '--detach' cannot be used with '--command'"
-    #  if: runner.os == 'Windows'
+      - name: create set-metadata kind 0
+        shell: bash
+        run: |
+          gnostr -d ${{ env.POW }} \
+          -r ${{ env.DAMUS }} \
+          --nsec "$(gnostr --hash '$GITHUB_REPOSITORY_ID')" \
+          set-metadata \
+          -n gnostr-bot \
+          -a "$GITHUB_REPOSITORY_OWNER $(gnostr-weeble)/$(gnostr-blockheight) #$GITHUB_REPOSITORY_ID" \
+          -t "$GITHUB_REPOSITORY" \
+          -t "$GITHUB_WORKFLOW" \
+          -t "$GITHUB_WORKFLOW_SHA" \
+          -t "$GITHUB_WORKFLOW_REF" \
+          -t "$GITHUB_REF" \
+          -t "$GITHUB_RUN_ID" \
+          -t "gnostr-bot" \
+          -t "$GITHUB_REPOSITORY_OWNER" \
+          -t "$(date +%s)" \
+          -t "$RUNNER_ENVIRONMENT" \
+          -t "$RUNNER_OS" \
+          -t "$(gnostr-weeble)" \
+          -t "$(gnostr-blockheight)" \
+          -t "$(gnostr-wobble)" \
+          -p "https://avatars.githubusercontent.com/u/135379339?s=400&u=11cb72cccbc2b13252867099546074c50caef1ae&v=4" \
+          -b "https://raw.githubusercontent.com/gnostr-org/gnostr-icons/refs/heads/master/banner/1024x341.png" || true
+        #if: matrix.os == 'macos-latest'
 
-    #- name: Test --command conflict with --tail (Unix)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs --command "echo hi" --tail 2>&1 | grep -E "error: the argument '--command' cannot be used with '--tail'|error: the argument '--tail' cannot be used with '--command'"
-    #  if: runner.os != 'Windows'
+      - name: gnostr ngit fetch
+        shell: bash
+        run: |
+          git remote add gitworkshop nostr://npub1ahaz04ya9tehace3uy39hdhdryfvdkve9qdndkqp3tvehs6h8s5slq45hy/gnostr
+          gnostr ngit --help
+          #gnostr ngit --nsec $(gnostr --hash "") list
+          gnostr ngit --nsec $(gnostr --hash "") fetch 2>/dev/null 
+        #if: matrix.os == 'macos-latest'
 
-    #- name: Test --command conflict with --tail (Windows)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs.exe --command "echo hi" --tail 2>&1 | findstr /R "error: the argument '--command' cannot be used with '--tail' error: the argument '--tail' cannot be used with '--command'"
-    #  if: runner.os == 'Windows'
+      - name: Create custom-event kind 1
+        shell: bash
+        run: |
+          gnostr -V
+          EVENT=$(gnostr --nsec "$(gnostr --hash '$GITHUB_REPOSITORY_ID')" \
+            -d ${{ env.POW }} \
+            -r ${{ env.DAMUS }} \
+            -r ${{ env.NOS }} \
+            custom-event \
+            -k 1 \
+            -c "$GITHUB_REPOSITORY_OWNER $(gnostr-weeble)/$(gnostr-blockheight) #$GITHUB_REPOSITORY_ID" \
+            -t "$GITHUB_REPOSITORY" \
+            -t "$GITHUB_WORKFLOW" \
+            -t "$GITHUB_WORKFLOW_SHA" \
+            -t "$GITHUB_WORKFLOW_REF" \
+            -t "$GITHUB_REF" \
+            -t "$GITHUB_RUN_ID" \
+            -t "gnostr-bot" \
+            -t "$GITHUB_REPOSITORY_OWNER" \
+            -t "$(date +%s)" \
+            -t "$RUNNER_ENVIRONMENT" \
+            -t "$RUNNER_OS" \
+            -t "$(gnostr-weeble)" \
+            -t "$(gnostr-blockheight)" \
+            -t "$(gnostr-wobble)" \
+            --hex || true) && \
+            export EVENT=$EVENT && \
+            NOTE=$(gnostr convert-key -p note -k $EVENT) && echo && \
+            export NOTE=$NOTE && echo $NOTE && echo $EVENT && \
+            gnostr query --ids $EVENT --relay ${{ env.DAMUS }} && echo && \
+            gnostr query --ids $EVENT --relay ${{ env.NOS }} && echo
+        #if: matrix.os == 'macos-latest'
 
-    #- name: Test invalid --timeout (non-numeric) (Unix)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs --timeout abc 2>&1 | grep "error: Invalid value for '<SECONDS>'"
-    #  if: runner.os != 'Windows'
+      - name: 🌙 UTC second is ODD
+        if: ${{ steps.time_check_hour.outputs.is_even != 'true' }} && runner.os != 'windows'
+        run: |
+          cargo clean && echo "✅" || echo "❌"
 
-    #- name: Test invalid --timeout (non-numeric) (Windows)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs.exe --timeout abc 2>&1 | findstr "error: Invalid value for '<SECONDS>'"
-    #  if: runner.os == 'Windows'
+      - name: 🚀 cargo check -j8
+        #if: ${{ steps.time_check_hour.outputs.is_even == 'true' }}
+        run: |
+          cargo check -j8 && echo "✅" || echo "❌"
 
-    #- name: Test invalid --logging level (Unix)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs --logging InvalidLevel 2>&1 | grep "error: Invalid value for '<LEVEL>'"
-    #  if: runner.os != 'Windows'
+      - name: 🚀 cargo install -j8
+        #if: ${{ steps.time_check_hour.outputs.is_even == 'true' }}
+        shell: bash
+        run: |
+          cargo install -j8 -f --path . && echo "✅" ## || echo "❌"
 
-    #- name: Test invalid --logging level (Windows)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs.exe --logging InvalidLevel 2>&1 | findstr "error: Invalid value for '<LEVEL>'"
-    #  if: runner.os == 'Windows'
+      - name: 🚀 cargo test
+        #if: ${{ steps.time_check_hour.outputs.is_even == 'true' }}
+        shell: bash
+        run: |
+          if command -v apt-get &> /dev/null; then \
+          sudo apt-get update && \
+          sudo apt-get install -y \
+          libxcb1-dev \
+          libxcb-render0-dev \
+          libxcb-shape0-dev \
+          libxcb-xfixes0-dev; \
+          else echo 'apt-get not found, trying yum'; \
+          if command -v yum &> /dev/null; \
+          then sudo yum install -y libxcb \
+          libxcb-devel \
+          libxcb-render-devel \
+          libxcb-shape-devel \
+          libxcb-xfixes-devel; \
+          else echo \
+          'Neither apt-get nor yum found. Please install libxcb development libraries manually.';\
+          fi;\
+          fi;
+        if: matrix.os != 'windows-latest' && matrix.os != 'macos-latest'
 
-    #- name: Test invalid --log-file path (cannot create) (Unix)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs --log-file /nonexistent/path/log.log 2>&1 | grep "Error: No such file or directory"
-    #  if: runner.os != 'Windows'
+      - name: 🚀 cargo test
+        #if: ${{ steps.time_check_hour.outputs.is_even == 'true' }}
+        shell: bash
+        run: |
+          cargo test -j8 -- --nocapture && echo "✅" ## || echo "❌"
 
-    #- name: Test invalid --log-file path (cannot create) (Windows)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs.exe --log-file C:\nonexistent\path\log.log 2>&1 | findstr "Error: The system cannot find the path specified."
-    #  if: runner.os == 'Windows'
+      - name: 🌙 UTC second is ODD
+        if: ${{ steps.time_check_hour.outputs.is_even != 'true' }}
+        run: |
+          cargo test -j8 -- --ignored && echo "✅" || echo "❌"
 
-    #- name: Test --command with empty string (Unix)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs --no-detach --command "" --log-file test_cmd_empty.log
-    #    grep "Executing command: \"\"" test_cmd_empty.log
-    #    grep "Command executed successfully." test_cmd_empty.log
-    #  if: runner.os != 'Windows'
+      - run: |
+         make gnostr-chat &
+         make gnostr-chat &
+         sleep 5 # Wait for services to start
+         gnostr query --limit 100
 
-    #- name: Test --command with empty string (Windows)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs.exe --no-detach --command "" --log-file test_cmd_empty.log
-    #    findstr "Executing command: \"\"" test_cmd_empty.log
-    #    findstr "Command executed successfully." test_cmd_empty.log
-    #  if: runner.os == 'Windows'
+      - name: Cleanup lingering gnostr processes (Linux/macOS)
+        if: success() && (matrix.os == 'ubuntu-latest' || matrix.os == 'macos-latest')
+        run: |
+          echo "Attempting to kill lingering gnostr and git-remote-nostr processes..."
+          pkill -f "gnostr" || true
+          pkill -f "git-remote-nostr" || true
+          echo "Cleanup attempt finished."
+        continue-on-error: true
 
-    #- name: Test --command with special characters (Unix)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs --no-detach --command "echo hello > output.txt && cat output.txt" --log-file test_cmd_special.log
-    #    grep "Executing command: \"echo hello > output.txt && cat output.txt\"" test_cmd_special.log
-    #    grep "Command executed successfully." test_cmd_special.log
-    #    grep "hello" output.txt # Verify command's effect
-    #  if: runner.os != 'Windows'
+      - name: Cleanup lingering gnostr processes (Windows)
+        if: success() && (matrix.os == 'windows-latest')
+        shell: pwsh
+        run: |
+          echo "Attempting to kill lingering gnostr and git-remote-nostr processes..."
+          Stop-Process -Name "gnostr" -ErrorAction SilentlyContinue || true
+          Stop-Process -Name "git-remote-nostr" -ErrorAction SilentlyContinue || true
+          echo "Cleanup attempt finished."
+        continue-on-error: true
 
-    #- name: Test --command with special characters (Windows)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs.exe --no-detach --command "echo hello > output.txt & type output.txt" --log-file test_cmd_special.log
-    #    findstr "Executing command: \"echo hello > output.txt & type output.txt\"" test_cmd_special.log
-    #    findstr "Command executed successfully." test_cmd_special.log
-    #    findstr "hello" output.txt # Verify command's effect
-    #  if: runner.os == 'Windows'
+      - name: Get Current Job Log URL
+        uses: Tiryoh/gha-jobid-action@v1.4.0
+        id: jobs
+        if: ${{ !env.ACT }}
+        with:
+          job_name: "gnostr-bot (${{ matrix.os }}, ${{ matrix.rustup }})" # input job.<job-id>.name and matrix here.
+          per_page: 50 # input matrix size here if it is larger than 30
+      - name: Output Current Job Log URL
+        run: echo ${{ steps.jobs.outputs.html_url }}
 
-    - name: Test --logging trace --command "cargo install gnostr" (Unix)
-      shell: bash
-      run: |
-        ./target/release/detach-rs --log-file gnostr.log --logging trace --command "cargo install gnostr -vv"
-        grep "Executing command: \"cargo install gnostr -vv\"" gnostr.log
-      if: runner.os != 'Windows'
-    #- name: Test --logging trace --command "gnostr" (Unix)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs --log-file gnostr.log --logging trace --command "gnostr" --timeout 20
-    #    grep "Executing command: \"gnostr\"" gnostr.log
-    #    grep "Command timed out after 20 seconds." gnostr.log
-    #  if: runner.os != 'Windows'
+      - name: Execute script on failure
+        shell: bash
+        if: failure()
+        run: |
+          echo "A previous step failed! Executing cleanup or notification script..."
+          EVENT=$(gnostr --nsec "$(gnostr --hash '$GITHUB_REPOSITORY_ID')" \
+            -d ${{ env.POW }} \
+            -r ${{ env.DAMUS }} \
+            -r ${{ env.NOS }} \
+            custom-event \
+            -k 1 \
+            -c "[$GITHUB_REPOSITORY_ID](${{ steps.jobs.outputs.html_url }}) (${{ matrix.os }}, ${{ matrix.rustup }}) Failed!" \
+            -t "$GITHUB_REPOSITORY" \
+            -t "$GITHUB_WORKFLOW" \
+            -t "$GITHUB_WORKFLOW_SHA" \
+            -t "$GITHUB_WORKFLOW_REF" \
+            -t "$GITHUB_REF" \
+            -t "$GITHUB_RUN_ID" \
+            -t "gnostr-bot" \
+            -t "$GITHUB_REPOSITORY_OWNER" \
+            -t "$(date +%s)" \
+            -t "$RUNNER_ENVIRONMENT" \
+            -t "$RUNNER_OS" \
+            -t "$(gnostr-weeble)" \
+            -t "$(gnostr-blockheight)" \
+            -t "$(gnostr-wobble)" \
+            --hex || true) && \
+            export EVENT=$EVENT && \
+            NOTE=$(gnostr convert-key -p note -k $EVENT || true) || true && \
+            export NOTE=$NOTE && echo $NOTE && echo $EVENT && \
+            gnostr-query -i $EVENT -r ${{ env.DAMUS }} && \
+            gnostr-query -i $EVENT -r ${{ env.NOS }} && \
+            echo "http://nostr.band/$NOTE"
 
-    #- name: Test --logging Warn --command "cargo install gnostr-relay" (Unix)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs --log-file gnostr-relay.log --logging Warn --command "cargo install gnostr-relay" --timeout 10
-    #    grep "Executing command: \"cargo install gnostr-relay\"" gnostr-relay.log
-    #    grep "Command timed out after 10 seconds." gnostr-relay.log
-    #  if: runner.os != 'Windows'
+      - name: Execute script on cancelled
+        shell: bash
+        if: cancelled()
+        run: |
+          echo "A previous step cancelled! Executing cleanup or notification script..."
+          EVENT=$(gnostr --nsec "$(gnostr --hash '$GITHUB_REPOSITORY_ID')" \
+            -d ${{ env.POW }} \
+            -r ${{ env.DAMUS }} \
+            -r ${{ env.NOS }} \
+            custom-event \
+            -k 1 \
+            -c "[$GITHUB_REPOSITORY_ID](${{ steps.jobs.outputs.html_url }}) (${{ matrix.os }}, ${{ matrix.rustup }}) Cancelled!" \
+            -t "$GITHUB_REPOSITORY" \
+            -t "$GITHUB_WORKFLOW" \
+            -t "$GITHUB_WORKFLOW_SHA" \
+            -t "$GITHUB_WORKFLOW_REF" \
+            -t "$GITHUB_REF" \
+            -t "$GITHUB_RUN_ID" \
+            -t "gnostr-bot" \
+            -t "$GITHUB_REPOSITORY_OWNER" \
+            -t "$(date +%s)" \
+            -t "$RUNNER_ENVIRONMENT" \
+            -t "$RUNNER_OS" \
+            -t "$(gnostr-weeble)" \
+            -t "$(gnostr-blockheight)" \
+            -t "$(gnostr-wobble)" \
+            --hex || true) && \
+            export EVENT=$EVENT && \
+            NOTE=$(gnostr convert-key -p note -k $EVENT || true) || true && \
+            export NOTE=$NOTE && echo $NOTE && echo $EVENT && \
+            gnostr-query -i $EVENT -r ${{ env.DAMUS }} && \
+            gnostr-query -i $EVENT -r ${{ env.NOS }} && \
+            echo "http://nostr.band/$NOTE"
 
-    #- name: Test --logging info --command "gnostr-relay" (Unix)
-    #  shell: bash
-    #  run: |
-    #    ./target/release/detach-rs --log-file gnostr-relay.log --logging info --command "gnostr-relay" --timeout 10
-    #    grep "Executing command: \"gnostr-relay\"" gnostr-relay.log
-    #    grep "Command timed out after 10 seconds. Attempting graceful shutdown (SIGINT)." gnostr-relay.log
-    #    grep "Command timed out after 10 seconds." gnostr-relay.log
-    #  if: runner.os != 'Windows'
-    - name: Test --logging info --command "gnostr" (Unix)
-      shell: bash
-      run: |
-        ./target/release/detach-rs --log-file gnostr.log --logging info --command "gnostr" --timeout 10
-        grep "Executing command: \"gnostr\"" gnostr.log
-        grep "Command timed out after 10 seconds. Attempting graceful shutdown (SIGINT)." gnostr.log
-        grep "Command timed out after 10 seconds." gnostr.log
-      if: runner.os != 'Windows'
+      - name: Execute script on success
+        shell: bash
+        if: success()
+        run: |
+          echo "A previous step succeeded! Executing cleanup or notification script..."
+          EVENT=$(gnostr --nsec "$(gnostr --hash '$GITHUB_REPOSITORY_ID')" \
+            -d ${{ env.POW }} \
+            -r ${{ env.DAMUS }} \
+            -r ${{ env.NOS }} \
+            custom-event \
+            -k 1 \
+            -c "[$GITHUB_REPOSITORY_ID](${{ steps.jobs.outputs.html_url }}) (${{ matrix.os }}, ${{ matrix.rustup }}) Success!" \
+            -t "$GITHUB_REPOSITORY" \
+            -t "$GITHUB_WORKFLOW" \
+            -t "$GITHUB_WORKFLOW_SHA" \
+            -t "$GITHUB_WORKFLOW_REF" \
+            -t "$GITHUB_REF" \
+            -t "$GITHUB_RUN_ID" \
+            -t "gnostr-bot" \
+            -t "$GITHUB_REPOSITORY_OWNER" \
+            -t "$(date +%s)" \
+            -t "$RUNNER_ENVIRONMENT" \
+            -t "$RUNNER_OS" \
+            -t "$(gnostr-weeble)" \
+            -t "$(gnostr-blockheight)" \
+            -t "$(gnostr-wobble)" \
+            --hex || true) && \
+            export EVENT=$EVENT && \
+            echo EVENT=$EVENT && \
+            NOTE=$(gnostr convert-key -p note -k $EVENT || true) || true && \
+            export NOTE=$NOTE && echo NOTE=$NOTE && echo EVENT=$EVENT && \
+            gnostr-query -i $EVENT -r ${{ env.DAMUS }} && \
+            gnostr-query -i $EVENT -r ${{ env.NOS }} && \
+            echo "http://nostr.band/$NOTE"
+
+      #- name: Save rustup
+      #  id: cache-rustup-save
+      #  uses: actions/cache/save@v3
+      #  if: ${{ !env.ACT }}
+      #  with:
+      #    path: |
+      #      ~/.rustup
+      #    key: ${{ steps.cache-rustup-restore.outputs.cache-primary-key }}
+
+      - name: Save cargo
+        id: cache-cargo-save
+        uses: actions/cache/save@v3
+        if: ${{ !env.ACT }}
+        with:
+          path: |
+            ~/.cargo
+          key: ${{ steps.cache-cargo-restore.outputs.cache-primary-key }}
+
+      - name: Save target
+        id: cache-target-save
+        uses: actions/cache/save@v3
+        if: ${{ !env.ACT }}
+        with:
+          path: |
+            target
+          key: ${{ steps.cache-target-restore.outputs.cache-primary-key }}
