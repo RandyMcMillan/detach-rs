@@ -25,6 +25,7 @@ jobs:
       matrix:
         os: [macos-latest, ubuntu-latest, windows-latest]
         rustup: [stable, nightly]
+        toolchain: [stable, nightly]
         #commands: [""]  # , "sniper", "chat", "legit", "ngit", "set-metadata", "note"]
       fail-fast: false
     runs-on: ${{ matrix.os }}
