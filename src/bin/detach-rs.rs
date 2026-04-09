@@ -14,6 +14,7 @@ use std::path::PathBuf;
 // REMOVED: use std::process::Command;
 use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::time::Duration as TokioDuration;
 
 use detach::Args;
 use detach::daemonize;
@@ -45,12 +46,28 @@ fn main() -> anyhow::Result<()> {
 
     let should_detach_initial = args.detach && !args.no_detach && !args.tail; // Determine this earlier
 
-    // Determine `to_console` based on command, tail, or detach status
-    let to_console = args.command.is_some() || args.tail || !should_detach_initial; // Log to console if command, tail, or not detaching
+    // For daemon mode, call daemonize BEFORE setting up log4rs or starting the tokio runtime.
+    // Forking inside a running multi-threaded runtime causes mutex deadlocks in the child process.
+    // daemonize will set up logging and its own tokio runtime in the child process after forking.
+    if should_detach_initial {
+        #[cfg(unix)]
+        {
+            let service_future = run_service_async();
+            daemonize(&log_file_path, log_level, args.timeout, service_future)?;
+            return Ok(());
+        }
+        #[cfg(not(unix))]
+        {
+            eprintln!("TODO: Daemonization is not supported on this operating system.");
+            // Fall through to run in non-detach mode
+        }
+    }
 
-    setup_logging(&log_file_path, log_level, to_console)?; // SINGLE setup_logging call
+    // Non-daemon path: set up logging, then create the tokio runtime
+    let to_console = args.command.is_some() || args.tail || true; // Log to console if not daemonizing
+    setup_logging(&log_file_path, log_level, to_console)?;
 
-    // Build the tokio runtime once
+    // Build the tokio runtime
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -73,39 +90,27 @@ fn main() -> anyhow::Result<()> {
         trace!("trace");
         warn!("warn");
 
-        let mut should_detach = should_detach_initial; // Use the initial determination
-
-        #[cfg(not(unix))]
-        {
-            if should_detach {
-                eprintln!("Daemonization is not supported on this operating system.");
-                should_detach = false;
-            }
-        }
+        debug!("Service started. PID: {}", std::process::id());
 
         // Create the service future (heartbeat loop)
         let service_future = run_service_async();
 
-        if should_detach {
-            debug!("Detaching process... Check logs at {:?}", log_file_path);
-            // daemonize will now handle tokio runtime, logging, and timeout
-            daemonize(
-                &log_file_path,
-                log_level,
-                args.timeout,
-                service_future,
-            )?;
-            Ok(())
+        // Run the async service directly, with optional timeout
+        if let Some(timeout_seconds) = args.timeout {
+            tokio::select! {
+                _ = service_future => {
+                    debug!("Service future finished before timeout.");
+                }
+                _ = tokio::time::sleep(TokioDuration::from_secs(timeout_seconds)) => {
+                    info!("Timeout reached after {} seconds. Terminating service.", timeout_seconds);
+                }
+            }
         } else {
-            // All setup_logging calls removed from here
-            debug!("Service started. PID: {}", std::process::id());
-
-            // Run the async service directly
             service_future.await?;
-
-            info!("Service shutting down.");
-            Ok(())
         }
+
+        info!("Service shutting down.");
+        Ok(())
     }); // End of rt.block_on(async { ... })
     result // Main function returns the result of the async block
 }

@@ -168,7 +168,7 @@ pub async fn run_command_and_exit(
                     command.kill().await?; // Kill the process
                 }
                 command.wait().await?; // Wait for it to be killed or exit
-                return Err(anyhow::anyhow!("Command timed out.")); // Indicate timeout as an error
+                return Ok(()); // Timeout is an expected condition, not an error
             }
         }
     } else {
@@ -266,8 +266,8 @@ pub async fn run_command_and_exit(
 /// system calls. Care has been taken to ensure their correct usage for daemonization.
 #[cfg(unix)]
 pub fn daemonize<F>(
-    _log_path: &PathBuf, // Marked as unused
-    _level: log::LevelFilter, // Marked as unused
+    log_path: &PathBuf,
+    level: log::LevelFilter,
     timeout: Option<u64>,
     service_future: F,
 ) -> Result<(), anyhow::Error>
@@ -309,6 +309,13 @@ where
         dup2(fd, STDERR_FILENO);
     }
 
+    // IMPORTANT: Set up logging AFTER daemonization and BEFORE the tokio runtime.
+    // The caller must NOT have initialized log4rs before calling daemonize; doing so
+    // and then forking would cause mutex deadlocks in the child (forking a
+    // multi-threaded process only duplicates the calling thread, leaving inherited
+    // mutexes permanently locked).
+    setup_logging(log_path, level, false)?;
+
     // IMPORTANT: Re-initialize tokio runtime AFTER daemonization
     // This prevents issues with forking a multi-threaded runtime.
     let rt = tokio::runtime::Builder::new_multi_thread()
@@ -317,13 +324,10 @@ where
         .unwrap();
 
     rt.block_on(async {
-        use log::{debug, info, trace, warn};
+        use log::{debug, info};
         use tokio::time::sleep;
 
-
-        debug!("Daemon process started. PID: {}", std::process::id());
-        trace!("Daemon process started. PID: {}", std::process::id());
-        warn!("Daemon process started. PID: {}", std::process::id());
+        info!("Daemon process started. PID: {}", std::process::id());
 
         if let Some(timeout_seconds) = timeout {
             debug!("Setting timeout for {} seconds.", timeout_seconds);
@@ -332,7 +336,7 @@ where
                     debug!("Service future finished before timeout.");
                 }
                 _ = sleep(TokioDuration::from_secs(timeout_seconds)) => { // Use TokioDuration here
-                    debug!("Timeout reached after {} seconds. Terminating service.", timeout_seconds);
+                    info!("Timeout reached after {} seconds. Terminating service.", timeout_seconds);
                 }
             }
         } else {
@@ -357,7 +361,7 @@ pub fn daemonize<F>(
 where
     F: std::future::Future<Output = Result<(), anyhow::Error>> + Send + 'static,
 {
-    eprintln!("Daemonization is not supported on this operating system.");
+    eprintln!("TODO: Daemonization is not supported on this operating system.");
     Ok(()) // Or return an error if you want to explicitly signal failure
 }
 
@@ -427,7 +431,7 @@ pub async fn run_service_async() -> anyhow::Result<()> {
     use log::debug;
     let mut count = 0;
     loop {
-        debug!("Service heartbeat #{}", count);
+        info!("Service heartbeat #{}", count);
         tokio::time::sleep(TokioDuration::from_secs(10)).await;
         count += 1;
 
