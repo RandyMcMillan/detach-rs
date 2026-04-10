@@ -102,6 +102,32 @@ jobs:
         findstr "Command timed out" test_command_timeout_windows.log
       if: runner.os == 'Windows'
 
+    - name: Install cargo-binstall
+      run: |
+        curl -L --proto '=https' --tlsv1.2 -sSf \
+          https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh \
+          | bash
+      if: runner.os != 'Windows'
+
+    - name: Install gnostr via cargo-binstall
+      run: cargo binstall --no-confirm gnostr
+      if: runner.os != 'Windows'
+
+    - name: Run gnostr -h
+      run: gnostr -h
+      if: runner.os != 'Windows'
+
+    - name: Run gnostr custom-event
+      run: gnostr custom-event
+      if: runner.os != 'Windows'
+
+    - name: Run gnostr custom-event add with content and tags
+      run: |
+        gnostr custom-event add \
+          --content "detach-rs ci test" \
+          --tags "t|message1","t|message2"
+      if: runner.os != 'Windows'
+
   publish:
     name: Publish to crates.io
     needs: build
