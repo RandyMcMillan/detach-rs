@@ -215,8 +215,8 @@ pub async fn run_command_and_exit(
 ///     This ensures that the new child process is no longer a session leader, preventing it from
 ///     reacquiring a controlling terminal.
 ///
-/// 4.  **Reset umask**: The file creation mask is cleared with `umask(0)` so the
-///     daemon can create files and directories with any desired permissions.
+/// 4.  **Reset umask**: The file creation mask is set to `0o022` (a safe default) so the
+///     daemon does not inadvertently create group- or world-writable files.
 ///
 /// 5.  **Change Working Directory**: The process changes its current working directory to the root (`/`).
 ///     This is done to avoid keeping any mount points busy, which could prevent unmounting.
@@ -301,8 +301,9 @@ where
             std::process::exit(0);
         }
 
-        // 4. Reset umask so the daemon can create files with any desired permissions.
-        umask(0);
+        // 4. Reset umask to a safe default so the daemon does not inadvertently
+        //    create group- or world-writable files.
+        umask(0o022);
 
         // 5. Change working directory to root to avoid locking the mount point.
         std::env::set_current_dir("/")?;
@@ -313,12 +314,22 @@ where
         //    make writes to the new stdout/stderr return EBADF.
         let dev_null = OpenOptions::new().read(true).write(true).open("/dev/null")?;
         let fd = dev_null.as_raw_fd();
-        if dup2(fd, STDIN_FILENO) < 0
-            || dup2(fd, STDOUT_FILENO) < 0
-            || dup2(fd, STDERR_FILENO) < 0
-        {
+        if dup2(fd, STDIN_FILENO) < 0 {
             return Err(anyhow::anyhow!(
-                "Failed to redirect standard I/O to /dev/null"
+                "Failed to redirect stdin (fd {}) to /dev/null",
+                STDIN_FILENO
+            ));
+        }
+        if dup2(fd, STDOUT_FILENO) < 0 {
+            return Err(anyhow::anyhow!(
+                "Failed to redirect stdout (fd {}) to /dev/null",
+                STDOUT_FILENO
+            ));
+        }
+        if dup2(fd, STDERR_FILENO) < 0 {
+            return Err(anyhow::anyhow!(
+                "Failed to redirect stderr (fd {}) to /dev/null",
+                STDERR_FILENO
             ));
         }
     }
