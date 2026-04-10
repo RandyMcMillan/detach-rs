@@ -64,7 +64,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     // Non-daemon path: set up logging, then create the tokio runtime
-    let to_console = args.command.is_some() || args.tail || true; // Log to console if not daemonizing
+    let to_console = args.command.is_some() || args.tail || !should_detach_initial; // Log to console if not daemonizing
     setup_logging(&log_file_path, log_level, to_console)?;
 
     // Build the tokio runtime
@@ -73,14 +73,11 @@ fn main() -> anyhow::Result<()> {
         .build()
         .unwrap();
 
-    let result = rt.block_on(async {
+    rt.block_on(async {
         // Wrap the main logic in an async block
         // --- NEW LOGIC FOR --command FLAG ---
         if let Some(cmd_str) = args.command {
-            return match run_command_and_exit(cmd_str, &log_file_path, log_level, args.timeout).await {
-                Ok(_) => Ok(()),
-                Err(e) => Err(e),
-            };
+            return run_command_and_exit(cmd_str, &log_file_path, log_level, args.timeout).await;
         }
         // --- END NEW LOGIC ---
 
@@ -111,6 +108,5 @@ fn main() -> anyhow::Result<()> {
 
         info!("Service shutting down.");
         Ok(())
-    }); // End of rt.block_on(async { ... })
-    result // Main function returns the result of the async block
+    }) // End of rt.block_on(async { ... }) — returns Result directly
 }

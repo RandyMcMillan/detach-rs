@@ -55,7 +55,6 @@
 //!     ```
 //!
 //! Note: On non-Unix systems, daemonization is not supported, and `--detach` will be ignored.
-use anyhow;
 use clap::Parser;
 use log::{info, warn};
 use std::path::PathBuf;
@@ -99,9 +98,9 @@ pub struct Args {
 }
 
 #[cfg(unix)]
-use libc::{STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, dup2, fork, setsid};
+use libc::{STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, dup2, fork, setsid, umask};
 #[cfg(unix)]
-use std::fs::File as StdFile;
+use std::fs::OpenOptions;
 #[cfg(unix)]
 use std::os::unix::io::AsRawFd;
 
@@ -216,12 +215,16 @@ pub async fn run_command_and_exit(
 ///     This ensures that the new child process is no longer a session leader, preventing it from
 ///     reacquiring a controlling terminal.
 ///
-/// 4.  **Change Working Directory**: The process changes its current working directory to the root (`/`).
+/// 4.  **Reset umask**: The file creation mask is cleared with `umask(0)` so the
+///     daemon can create files and directories with any desired permissions.
+///
+/// 5.  **Change Working Directory**: The process changes its current working directory to the root (`/`).
 ///     This is done to avoid keeping any mount points busy, which could prevent unmounting.
 ///
-/// 5.  **Redirect Standard I/O**: Standard input, output, and error streams (`stdin`, `stdout`, `stderr`)
-///     are redirected to `/dev/null`. This prevents the daemon from attempting to read from or
-///     write to a terminal that no longer exists, and ensures it runs silently in the background.
+/// 6.  **Redirect Standard I/O**: Standard input, output, and error streams (`stdin`, `stdout`, `stderr`)
+///     are redirected to `/dev/null` (opened `O_RDWR`). This prevents the daemon from attempting
+///     to read from or write to a terminal that no longer exists, and ensures it runs silently
+///     in the background.
 ///
 /// # Asynchronous Execution and Timeout Management:
 ///
@@ -298,15 +301,26 @@ where
             std::process::exit(0);
         }
 
-        // 4. Change working directory to root to avoid locking the mount point
+        // 4. Reset umask so the daemon can create files with any desired permissions.
+        umask(0);
+
+        // 5. Change working directory to root to avoid locking the mount point.
         std::env::set_current_dir("/")?;
 
-        // 5. Redirect standard I/O to /dev/null
-        let dev_null = StdFile::open("/dev/null")?;
+        // 6. Redirect standard I/O to /dev/null.
+        //    Must open O_RDWR so that the duplicated fds are valid for both
+        //    reading (stdin) and writing (stdout, stderr).  Using O_RDONLY would
+        //    make writes to the new stdout/stderr return EBADF.
+        let dev_null = OpenOptions::new().read(true).write(true).open("/dev/null")?;
         let fd = dev_null.as_raw_fd();
-        dup2(fd, STDIN_FILENO);
-        dup2(fd, STDOUT_FILENO);
-        dup2(fd, STDERR_FILENO);
+        if dup2(fd, STDIN_FILENO) < 0
+            || dup2(fd, STDOUT_FILENO) < 0
+            || dup2(fd, STDERR_FILENO) < 0
+        {
+            return Err(anyhow::anyhow!(
+                "Failed to redirect standard I/O to /dev/null"
+            ));
+        }
     }
 
     // IMPORTANT: Set up logging AFTER daemonization and BEFORE the tokio runtime.
@@ -340,7 +354,10 @@ where
                 }
             }
         } else {
-            service_future.await.expect("Service future failed"); // Unwraps Result, will panic on error
+            if let Err(e) = service_future.await {
+                log::error!("Service future returned an error: {}", e);
+                std::process::exit(1);
+            }
         }
 
         info!("Daemon process shutting down.");
@@ -442,4 +459,130 @@ pub async fn run_service_async() -> anyhow::Result<()> {
     }
     info!("Service shutting down.");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // A global Once to initialise env_logger at most once across all tests.
+    // log4rs cannot be initialised in tests because it conflicts with the
+    // global logger; env_logger is used instead so the macros don't panic.
+    use std::sync::Once;
+    static LOG_INIT: Once = Once::new();
+    fn init_test_logger() {
+        LOG_INIT.call_once(|| {
+            let _ = env_logger::builder().is_test(true).try_init();
+        });
+    }
+
+    // ------------------------------------------------------------------ Args
+    #[test]
+    fn test_args_defaults() {
+        let args = Args::parse_from(["detach-rs"]);
+        assert!(!args.detach);
+        assert!(!args.no_detach);
+        assert!(!args.tail);
+        assert!(args.timeout.is_none());
+        assert!(args.logging.is_none());
+        assert!(args.command.is_none());
+        assert_eq!(args.log_file, PathBuf::from("./detach.log"));
+    }
+
+    #[test]
+    fn test_args_no_detach_with_timeout() {
+        let args = Args::parse_from(["detach-rs", "--no-detach", "--timeout", "42"]);
+        assert!(!args.detach);
+        assert!(args.no_detach);
+        assert_eq!(args.timeout, Some(42));
+    }
+
+    #[test]
+    fn test_args_logging_level() {
+        let args = Args::parse_from(["detach-rs", "--logging", "debug"]);
+        assert_eq!(args.logging, Some(log::LevelFilter::Debug));
+    }
+
+    #[test]
+    fn test_args_custom_log_file() {
+        let args = Args::parse_from(["detach-rs", "--log-file", "/tmp/test.log"]);
+        assert_eq!(args.log_file, PathBuf::from("/tmp/test.log"));
+    }
+
+    #[test]
+    fn test_args_command_flag() {
+        let args = Args::parse_from(["detach-rs", "--command", "echo hello"]);
+        assert_eq!(args.command.as_deref(), Some("echo hello"));
+    }
+
+    // Verify that --detach and --tail are mutually exclusive.
+    #[test]
+    fn test_args_tail_conflicts_with_detach() {
+        let result = Args::try_parse_from(["detach-rs", "--detach", "--tail"]);
+        assert!(result.is_err(), "--detach and --tail should conflict");
+    }
+
+    // -------------------------------------------------------- run_command_and_exit
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_run_command_success() {
+        init_test_logger();
+        let path = PathBuf::from("/tmp/detach_test_cmd.log");
+        let result =
+            run_command_and_exit("true".to_string(), &path, log::LevelFilter::Info, None).await;
+        assert!(result.is_ok(), "Expected Ok for successful command");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_run_command_failure() {
+        init_test_logger();
+        let path = PathBuf::from("/tmp/detach_test_cmd.log");
+        // `false` exits with status 1.
+        let result =
+            run_command_and_exit("false".to_string(), &path, log::LevelFilter::Info, None).await;
+        assert!(result.is_err(), "Expected Err for failing command");
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("exit code"),
+            "Error should mention exit code, got: {}",
+            msg
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_run_command_timeout_returns_ok() {
+        init_test_logger();
+        let path = PathBuf::from("/tmp/detach_test_cmd.log");
+        // A 5-second sleep should be killed by the 1-second timeout.
+        let result = run_command_and_exit(
+            "sleep 5".to_string(),
+            &path,
+            log::LevelFilter::Info,
+            Some(1),
+        )
+        .await;
+        // Timeout is treated as a normal termination (Ok).
+        assert!(
+            result.is_ok(),
+            "Expected Ok when command is killed by timeout"
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_run_command_completes_before_timeout() {
+        init_test_logger();
+        let path = PathBuf::from("/tmp/detach_test_cmd.log");
+        // A fast command should finish well before the 10-second timeout.
+        let result = run_command_and_exit(
+            "echo done".to_string(),
+            &path,
+            log::LevelFilter::Info,
+            Some(10),
+        )
+        .await;
+        assert!(result.is_ok(), "Expected Ok when command finishes in time");
+    }
 }
