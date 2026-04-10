@@ -28,43 +28,46 @@ jobs:
       run: cargo build --verbose
     - name: Build Release
       run: cargo build --verbose --release
+    - name: Clippy (stable only)
+      run: cargo clippy -- -D warnings
+      if: matrix.toolchain == 'stable'
     - name: Run tests
       run: cargo test --verbose
 
     - name: Run command-line tests (Non-daemonizing)
       run: |
-        ./target/release/detach-rs --no-detach --log-file test_no_detach.log --timeout 5 && \
-        sleep 7 # Give it time to timeout
+        # --no-detach runs in foreground; it blocks until the 5-second timeout fires.
+        ./target/release/detach-rs --no-detach --log-file test_no_detach.log --timeout 5
         grep "Service heartbeat" test_no_detach.log
         grep "Timeout reached" test_no_detach.log
       if: runner.os != 'Windows'
 
     - name: Run command-line tests (Non-daemonizing)
       run: |
-        .\target\release\detach-rs.exe --no-detach --log-file test_no_detach.log --timeout 5 && \
-        timeout /T 7 /NOBREAK >nul # Give it time to timeout
+        .\target\release\detach-rs.exe --no-detach --log-file test_no_detach.log --timeout 5
         findstr "Service heartbeat" test_no_detach.log
         findstr "Timeout reached" test_no_detach.log
       if: runner.os == 'Windows'
 
     - name: Run command-line tests (Tailing with Timeout)
       run: |
+        # --tail runs in foreground; it blocks until the 10-second timeout fires.
         ./target/release/detach-rs --tail --log-file test_tail.log --timeout 10
-        sleep 12 # Give it time to timeout
         grep "Timeout reached" test_tail.log
       if: runner.os != 'Windows'
 
     - name: Run command-line tests (Tailing with Timeout)
       run: |
         .\target\release\detach-rs.exe --tail --log-file test_tail.log --timeout 10
-        timeout /T 12 /NOBREAK >nul # Give it time to timeout
         findstr "Timeout reached" test_tail.log
       if: runner.os == 'Windows'
 
     - name: Test daemonization with Timeout (Unix-like)
       run: |
-        ./target/release/detach-rs --log-file test_daemonize.log --timeout 10 --detach & # Run daemonized with timeout
-        sleep 12 # Give the daemonized process time to start, timeout, and write to log
+        # --detach double-forks; the parent exits immediately so no & is needed.
+        # Give the child process time to start, hit its timeout, and flush the log.
+        ./target/release/detach-rs --log-file test_daemonize.log --timeout 10 --detach
+        sleep 15
         grep "Timeout reached" test_daemonize.log
       if: runner.os != 'Windows'
 
